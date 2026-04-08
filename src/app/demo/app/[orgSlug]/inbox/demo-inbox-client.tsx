@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ThreadMessages } from "@/components/inbox/thread-messages";
 import { cn } from "@/lib/utils";
 import {
   demoCustomers,
@@ -12,6 +13,13 @@ export function DemoInboxClient() {
   const [selected, setSelected] = useState<DemoCustomer>(demoCustomers[0]!);
 
   const thread = demoMessagesByCustomer[selected.id] ?? [];
+
+  const messages = thread.map((m) => ({
+    id: m.id,
+    direction: m.direction,
+    body: m.body,
+    timeLabel: m.timeLabel,
+  }));
 
   return (
     <div className="grid min-h-[32rem] gap-4 lg:grid-cols-[minmax(0,14rem)_1fr] xl:grid-cols-[minmax(0,18rem)_1fr]">
@@ -54,37 +62,11 @@ export function DemoInboxClient() {
             {selected.phoneE164}
           </p>
         </header>
-        <div
-          className="flex-1 space-y-2 overflow-y-auto px-3 py-4"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 20% 20%, rgba(16,185,129,0.06), transparent 40%), radial-gradient(circle at 80% 0%, rgba(59,130,246,0.05), transparent 35%)",
-          }}
-        >
-          {thread.map((m) => (
-            <div
-              key={m.id}
-              className={cn(
-                "flex",
-                m.direction === "outbound" ? "justify-end" : "justify-start",
-              )}
-            >
-              <div
-                className={cn(
-                  "max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-md",
-                  m.direction === "outbound"
-                    ? "rounded-br-md bg-emerald-700/90 text-white"
-                    : "rounded-bl-md border border-white/5 bg-zinc-800 text-zinc-100",
-                )}
-              >
-                <p className="break-words whitespace-pre-wrap">{m.body}</p>
-                <p className="mt-1 text-right text-[10px] opacity-60">
-                  {m.timeLabel}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
+        <ThreadMessages
+          threadKey={selected.id}
+          messages={messages}
+          emptyLabel="No messages in this preview thread."
+        />
       </section>
     </div>
   );

@@ -1,0 +1,13 @@
+# Next.js on Netlify: use the official runtime plugin so routes/API/SSR work.
+# In the Netlify UI, set "Base directory" to `chathub` if the repo root is the monorepo parent.
+[build]
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Do not set `publish` manually — the Next plugin wires the correct output.
+# Do not add SPA-style `/* /index.html 200` here; it breaks the Next handler.

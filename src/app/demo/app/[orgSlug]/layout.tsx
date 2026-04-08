@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { DemoOrgNav } from "@/components/app/demo-org-nav";
 import { DEMO_ORG_SLUG, demoOrg } from "@/lib/demo-data";
-import { cn } from "@/lib/utils";
 
 export default async function DemoAppLayout({
   children,
@@ -25,24 +25,7 @@ export default async function DemoAppLayout({
             </span>
             <span className="truncate text-sm text-zinc-500">Demo</span>
           </div>
-          <nav className="flex w-full gap-2 rounded-xl border border-white/10 bg-white/5 p-1 sm:w-auto">
-            <Link
-              href={`/demo/app/${DEMO_ORG_SLUG}`}
-              className={cn(
-                "min-h-10 flex-1 touch-manipulation rounded-lg px-3 py-2.5 text-center text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5 hover:text-white sm:flex-none sm:px-4",
-              )}
-            >
-              Dashboard
-            </Link>
-            <Link
-              href={`/demo/app/${DEMO_ORG_SLUG}/inbox`}
-              className={cn(
-                "min-h-10 flex-1 touch-manipulation rounded-lg px-3 py-2.5 text-center text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5 hover:text-white sm:flex-none sm:px-4",
-              )}
-            >
-              Inbox
-            </Link>
-          </nav>
+          <DemoOrgNav />
           <Link
             href="/login"
             className="text-center text-sm text-emerald-400 hover:underline sm:text-right"

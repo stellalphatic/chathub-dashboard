@@ -1,13 +1,19 @@
-import { and, count, eq, gte } from "drizzle-orm";
+import { and, count, eq, gte, lt } from "drizzle-orm";
 import { notFound } from "next/navigation";
+import { DashboardAnalytics } from "@/components/dashboard/dashboard-analytics";
 import { db } from "@/db";
 import { customer, message, organization } from "@/db/schema";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  bucketMessageDates,
+  buildDashboardInsights,
+  fillLastNDaysVolume,
+} from "@/lib/dashboard-insights";
+
+function trendPct(current: number, previous: number): number | undefined {
+  if (current === 0 && previous === 0) return undefined;
+  if (previous === 0) return current > 0 ? 100 : undefined;
+  return Math.round(((current - previous) / previous) * 100);
+}
 
 export default async function OrgDashboardPage({
   params,
@@ -22,7 +28,11 @@ export default async function OrgDashboardPage({
     .limit(1);
   if (!org) notFound();
 
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const now = Date.now();
+  const since24h = new Date(now - 24 * 60 * 60 * 1000);
+  const since48h = new Date(now - 48 * 60 * 60 * 1000);
+  const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000);
+  since7d.setUTCHours(0, 0, 0, 0);
 
   const [{ totalCustomers }] = await db
     .select({ totalCustomers: count() })
@@ -33,7 +43,18 @@ export default async function OrgDashboardPage({
     .select({ messages24h: count() })
     .from(message)
     .where(
-      and(eq(message.organizationId, org.id), gte(message.createdAt, since)),
+      and(eq(message.organizationId, org.id), gte(message.createdAt, since24h)),
+    );
+
+  const [{ prevMessages24h }] = await db
+    .select({ prevMessages24h: count() })
+    .from(message)
+    .where(
+      and(
+        eq(message.organizationId, org.id),
+        gte(message.createdAt, since48h),
+        lt(message.createdAt, since24h),
+      ),
     );
 
   const [{ inbound24h }] = await db
@@ -42,7 +63,7 @@ export default async function OrgDashboardPage({
     .where(
       and(
         eq(message.organizationId, org.id),
-        gte(message.createdAt, since),
+        gte(message.createdAt, since24h),
         eq(message.direction, "inbound"),
       ),
     );
@@ -53,8 +74,18 @@ export default async function OrgDashboardPage({
     .where(
       and(
         eq(message.organizationId, org.id),
-        gte(message.createdAt, since),
+        gte(message.createdAt, since24h),
         eq(message.direction, "outbound"),
+      ),
+    );
+
+  const [{ newCustomers7d }] = await db
+    .select({ newCustomers7d: count() })
+    .from(customer)
+    .where(
+      and(
+        eq(customer.organizationId, org.id),
+        gte(customer.createdAt, since7d),
       ),
     );
 
@@ -62,63 +93,68 @@ export default async function OrgDashboardPage({
     .select({ sentiment: message.sentiment, c: count() })
     .from(message)
     .where(
-      and(eq(message.organizationId, org.id), gte(message.createdAt, since)),
+      and(eq(message.organizationId, org.id), gte(message.createdAt, since24h)),
     )
     .groupBy(message.sentiment);
 
+  const volumeRows = await db
+    .select({ createdAt: message.createdAt })
+    .from(message)
+    .where(
+      and(eq(message.organizationId, org.id), gte(message.createdAt, since7d)),
+    );
+
+  const volume7d = fillLastNDaysVolume(bucketMessageDates(volumeRows), 7).map(
+    ({ label, count: c }) => ({ label, count: c }),
+  );
+
+  const sentiment = sentimentRows.map((row) => ({
+    label: String(row.sentiment ?? "unknown"),
+    count: row.c,
+  }));
+
+  const msgTrend = trendPct(messages24h, prevMessages24h);
+
   const stats = [
-    { label: "Customers", value: totalCustomers, sub: "total in CRM" },
-    { label: "Messages (24h)", value: messages24h, sub: "in + out" },
-    { label: "Inbound (24h)", value: inbound24h, sub: "from WhatsApp" },
-    { label: "Outbound (24h)", value: outbound24h, sub: "bot / agent" },
+    {
+      label: "Customers",
+      value: totalCustomers,
+      sub: "total in CRM",
+    },
+    {
+      label: "Messages (24h)",
+      value: messages24h,
+      sub: "in + out",
+      trendPct: msgTrend,
+    },
+    {
+      label: "Inbound (24h)",
+      value: inbound24h,
+      sub: "from WhatsApp",
+    },
+    {
+      label: "Outbound (24h)",
+      value: outbound24h,
+      sub: "bot / agent",
+    },
   ];
 
-  return (
-    <div className="space-y-8">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((s) => (
-          <Card key={s.label} className="h-full">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-zinc-400">
-                {s.label}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-semibold tabular-nums">{s.value}</p>
-              <p className="text-xs text-zinc-500 mt-1">{s.sub}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+  const insights = buildDashboardInsights({
+    messages24h,
+    prevMessages24h,
+    inbound24h,
+    outbound24h,
+    totalCustomers,
+    newCustomers7d,
+    sentiment,
+  });
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Sentiment (24h)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {sentimentRows.length === 0 ? (
-            <p className="text-sm text-zinc-500">
-              No labeled messages yet. Send{" "}
-              <code className="text-emerald-400">sentiment</code> from n8n when
-              you classify replies.
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-3">
-              {sentimentRows.map((row) => (
-                <div
-                  key={String(row.sentiment)}
-                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-3"
-                >
-                  <p className="text-xs uppercase tracking-wide text-zinc-500">
-                    {row.sentiment ?? "unknown"}
-                  </p>
-                  <p className="text-xl font-semibold tabular-nums">{row.c}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+  return (
+    <DashboardAnalytics
+      stats={stats}
+      volume7d={volume7d}
+      sentiment={sentiment}
+      insights={insights}
+    />
   );
 }
