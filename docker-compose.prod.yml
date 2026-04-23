@@ -1,0 +1,77 @@
+# docker compose -f docker-compose.prod.yml up -d
+#
+# Runs on a single EC2 box (t3.medium works for ~200k msgs/mo). For higher
+# scale, put Redis + Qdrant on managed services and scale out the worker
+# container behind the shared Redis.
+#
+# Postgres is NOT included here — use Supabase (recommended) or RDS.
+#
+# Redis + Qdrant are exposed on all interfaces (0.0.0.0) so Amplify can
+# connect via the instance's Elastic IP. They are protected by:
+#   - REDIS_PASSWORD (required; do not leave blank)
+#   - QDRANT_API_KEY (required)
+#   - the EC2 security group (always lock these ports down to known IPs
+#     if at all possible — public internet exposure should be temporary)
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - "redis-server"
+      - "--requirepass"
+      - "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env.production}"
+      - "--appendonly"
+      - "yes"
+      - "--maxmemory-policy"
+      - "noeviction"
+    volumes:
+      - redis-data:/data
+    ports:
+      - "0.0.0.0:6379:6379"
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY must be set in .env.production}
+    volumes:
+      - qdrant-data:/qdrant/storage
+    ports:
+      - "0.0.0.0:6333:6333"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      # Inside the compose network, workers/app reach Redis by service name
+      # and MUST use the password.
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      QDRANT_URL: http://qdrant:6333
+    depends_on:
+      - redis
+      - qdrant
+    ports:
+      - "3000:3000"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      QDRANT_URL: http://qdrant:6333
+    depends_on:
+      - redis
+      - qdrant
+    # Scale: `docker compose up -d --scale worker=3`
+    deploy:
+      replicas: 2
+
+volumes:
+  redis-data:
+  qdrant-data:

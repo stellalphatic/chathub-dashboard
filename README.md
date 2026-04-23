@@ -1,69 +1,132 @@
-# ChatHub
+# ChatHub — omni-channel messaging & automation platform
 
-Next.js app for **Clona staff** to provision businesses and client logins, and for **clients** to view inbox + analytics. Data is stored in **Postgres** (e.g. Supabase); **n8n** writes `customer` / `message` rows (SQL or HTTP ingest) per [`docs/SOP_DATABASE_N8N.md`](docs/SOP_DATABASE_N8N.md).
+Multi-tenant app for **Clona** (staff) to provision businesses, and for those
+businesses to run **WhatsApp + Instagram + Facebook Messenger** conversations
+end-to-end with an AI assistant, a CRM, templates, and broadcasts.
 
-## Prerequisites
+## What's in this repo
 
-- Node **20.19+** (or **22.13+** / **24+**). Node 23 may show `EBADENGINE` for eslint; safe to ignore or use Node 22 LTS.
-- PostgreSQL (Supabase recommended).
+```
+src/                         Next.js 15 app (web + webhooks)
+  app/                         App Router pages
+    admin/                     Staff console (Clona)
+    app/[orgSlug]/             Business workspace (inbox, bot, knowledge, …)
+    api/webhooks/{ycloud,      Channel provider webhooks (signed, idempotent)
+                  meta,
+                  manychat}/
+    api/v1/                    Internal REST for n8n / dashboard uploads
+  db/                          Drizzle schema + client
+  lib/
+    llm/                       Router (Groq → Gemini → OpenAI) + guardrails
+    providers/                 YCloud, Meta Graph, ManyChat adapters
+    rag/                       Chunker, embedder, Qdrant/Pinecone store
+    services/                  Inbound/outbound/LLM reply/RAG ingest
+    queue.ts                   BullMQ queues & job types
+    redis.ts                   ioredis singleton
+    encryption.ts              AES-GCM for stored secrets
+    window-24h.ts              WhatsApp 24h customer service window policy
+workers/                     BullMQ worker entry + handlers (Node process)
+docker-compose.prod.yml      App + worker + Redis + Qdrant for EC2
+Dockerfile, Dockerfile.worker
+docs/                        ARCHITECTURE, DEPLOY, N8N_VS_CODE, GUARDRAILS
+```
 
-## Install
+## Quick start (local)
 
 ```bash
 cd chathub
+cp .env.example .env.local         # then fill DATABASE_URL + BETTER_AUTH_SECRET
+cp .env.production.example .env.production  # for docker compose later
+
+# Generate a strong encryption key
+echo "ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env.local
+
 npm install
+npm run db:push
+npm run dev
 ```
 
-See [`.npmrc`](.npmrc) (`legacy-peer-deps`), `@opentelemetry/api`, and `npm audit` notes in the previous sections of git history if needed; same as before.
+In another terminal, run the worker (requires Redis locally):
+
+```bash
+docker run -d --name chathub-redis -p 6379:6379 redis:7-alpine
+echo "REDIS_URL=redis://localhost:6379" >> .env.local
+npm run worker
+```
+
+For RAG locally, also run Qdrant:
+
+```bash
+docker run -d --name qdrant -p 6333:6333 qdrant/qdrant:v1.12.4
+echo "QDRANT_URL=http://localhost:6333" >> .env.local
+```
+
+Then:
+
+1. Open `/admin/bootstrap` (prod needs `?token=$CHATHUB_SETUP_TOKEN`).
+2. Create the first staff user → sign in at `/admin/login`.
+3. Paste LLM keys at `/admin/llm` (or set env vars).
+4. Create a business at `/admin/organizations/new`.
+5. Log in as that business at `/login`.
+6. Connect a channel under **Channels**, configure the bot under **Bot**,
+   upload docs under **Knowledge**, manage templates under **Templates**.
+
+## Documentation
+
+| File | What's in it |
+|---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How the pieces fit — webhooks, queues, worker, LLM router, RAG |
+| [`docs/DEPLOY.md`](docs/DEPLOY.md) | Amplify + EC2 deploy, env vars, smoke test |
+| [`docs/GUARDRAILS.md`](docs/GUARDRAILS.md) | Exactly what runs before / after every LLM call |
+| [`docs/N8N_VS_CODE.md`](docs/N8N_VS_CODE.md) | Why the hot path is code, not n8n |
+| [`docs/SOP_DATABASE_N8N.md`](docs/SOP_DATABASE_N8N.md) | Legacy n8n ingest path (still supported for ops workflows) |
+| [`docs/N8N_INGEST.md`](docs/N8N_INGEST.md) | `/api/v1/ingest` reference |
+
+## Production deploy
+
+```bash
+# 1) Push Next.js app to Amplify (already wired to this branch).
+# 2) On EC2:
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml logs -f worker
+```
+
+See [`docs/DEPLOY.md`](docs/DEPLOY.md) for full walkthrough.
 
 ## Environment
 
-Copy [`.env.example`](.env.example) → `.env.local`:
+Minimum required variables to boot in production:
 
-- `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`
-- **`CHATHUB_SETUP_TOKEN`** (production): required for `/admin/bootstrap?token=…` (first staff user only)
-- `CHATHUB_PLATFORM_ADMIN_EMAILS` (optional): marks matching emails as platform admin on sign-up (bootstrap is preferred)
-
-## Database
-
-```bash
-npm run db:push
+```
+DATABASE_URL
+BETTER_AUTH_SECRET
+BETTER_AUTH_URL
+NEXT_PUBLIC_APP_URL
+ENCRYPTION_KEY               # AES-256-GCM key (base64, 32B)
+REDIS_URL                    # needed for worker + schedule + rate limits
+QDRANT_URL                   # if RAG is enabled with Qdrant
+GROQ_API_KEY  +  GEMINI_API_KEY  +  OPENAI_API_KEY  (at least one)
 ```
 
-## End-to-end flow
+Full reference → `.env.production.example`.
 
-1. **`npm run dev`** → open `/admin/bootstrap`  
-   - **Production:** set `CHATHUB_SETUP_TOKEN`, then open `/admin/bootstrap?token=YOUR_TOKEN`  
-   - Creates the **first staff** account (`platform_admin`).
-2. Sign in at **`/admin/login`** → create **businesses** → copy **`organization.id`** + ingest secret (for HTTP path).
-3. On each business → **Create client login** (email + password) → share credentials securely with the client.
-4. Client signs in at **`/login`** (no public registration; `/register` redirects).
-5. **n8n:** follow [**SOP_DATABASE_N8N.md**](docs/SOP_DATABASE_N8N.md) so every message uses the correct `organization_id`, upsert rules, and idempotency.
+## Security
 
-Optional: **`POST /api/v1/ingest`** — see [`docs/N8N_INGEST.md`](docs/N8N_INGEST.md).
+- All provider API keys are AES-256-GCM encrypted at rest (`ENCRYPTION_KEY`).
+- Each webhook verifies an HMAC signature when the provider signs (YCloud,
+  Meta). ManyChat uses a shared secret header.
+- Every DB query is tenant-scoped via `organizationId`. Vector stores use
+  one collection / namespace per tenant.
+- Dev fallback encryption key is used ONLY if `NODE_ENV !== 'production'`
+  and `ENCRYPTION_KEY` is missing; production throws.
+- Rate limits per-org (LLM calls) and per-channel-connection (sends).
+- Guardrails on inbound and outbound text — see `docs/GUARDRAILS.md`.
 
-## URLs
+## Roadmap (Phase 2)
 
-| URL | Who |
-|-----|-----|
-| `/demo` | **Static UI preview** (sample data, no DB or login) |
-| `/` | Entry: Business vs Staff |
-| `/admin/login` | Staff (Clona) |
-| `/admin/bootstrap` | First staff user only |
-| `/login` | Business users |
-| `/app`, `/app/[orgSlug]`, `/app/[orgSlug]/inbox` | Business dashboard |
-
-## Deploy
-
-Set env vars on the host; `BETTER_AUTH_URL` / `NEXT_PUBLIC_APP_URL` must match the live origin.
-
-## Project layout
-
-| Path | Purpose |
-|------|---------|
-| `src/app/admin/(protected)` | Staff console (auth required) |
-| `src/app/admin/(public)` | `/admin/login`, `/admin/bootstrap` |
-| `src/app/app` | Client shell + dashboard + inbox |
-| `src/app/api/v1/ingest` | Optional n8n HTTP writer |
-| `src/db/schema.ts` | Tables n8n must respect (see SOP) |
-| `docs/SOP_DATABASE_N8N.md` | **Required** n8n / DB standard |
+- Voice calls via SIP + Twilio Voice, live transcription during call, agent
+  whisper.
+- Key rotation script for ENCRYPTION_KEY (batch re-encrypt).
+- n8n packaged flows for common ops tasks (Calendly→CRM, Stripe→DM).
+- Per-tenant AWS KMS for secrets.
+- Analytics Phase 2: funnel dashboards, token cost per tenant.

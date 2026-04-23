@@ -149,3 +149,31 @@ export async function getOrganizationAdmin(orgId: string) {
     .limit(1);
   return row ?? null;
 }
+
+/** When true, business users cannot edit bot persona / FAQs / channels; platform staff still can. */
+export async function setOrganizationClientConfigLockAction(input: {
+  organizationId: string;
+  locked: boolean;
+}) {
+  await requirePlatformAdmin();
+  const [org] = await db
+    .select()
+    .from(organization)
+    .where(eq(organization.id, input.organizationId))
+    .limit(1);
+  if (!org) {
+    return { error: "Organization not found" };
+  }
+  const prev =
+    org.settings && typeof org.settings === "object" && !Array.isArray(org.settings)
+      ? (org.settings as Record<string, unknown>)
+      : {};
+  const next = { ...prev, clientConfigReadOnly: input.locked };
+  await db
+    .update(organization)
+    .set({ settings: next, updatedAt: new Date() })
+    .where(eq(organization.id, org.id));
+  revalidatePath(`/admin/organizations/${org.id}`);
+  revalidatePath("/admin");
+  return { ok: true as const };
+}

@@ -1,0 +1,19 @@
+# Worker image — runs BullMQ workers from /workers.
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN apk add --no-cache libc6-compat python3 make g++
+
+COPY package.json package-lock.json* .npmrc ./
+RUN npm ci --legacy-peer-deps --omit=dev
+
+COPY tsconfig.json ./
+COPY src ./src
+COPY workers ./workers
+COPY drizzle.config.ts ./
+
+# tsx is in devDependencies; we need it for the runtime entrypoint.
+RUN npm i --legacy-peer-deps tsx
+
+CMD ["npx", "tsx", "workers/index.ts"]

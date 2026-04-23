@@ -44,6 +44,15 @@ export default async function AdminProtectedLayout({
               >
                 New business
               </Link>
+              <Link href="/admin/llm" className="hover:text-white transition-colors">
+                LLM providers
+              </Link>
+              <Link href="/admin/usage" className="hover:text-white transition-colors">
+                Usage
+              </Link>
+              <Link href="/admin/staff" className="hover:text-white transition-colors">
+                Staff
+              </Link>
             </nav>
           </div>
           <div className="flex w-full shrink-0 items-center justify-between gap-3 sm:w-auto sm:justify-end">

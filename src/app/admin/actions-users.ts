@@ -1,7 +1,8 @@
 "use server";
 
 import { randomUUID } from "crypto";
-import { count, eq } from "drizzle-orm";
+import { clerkClient } from "@clerk/nextjs/server";
+import { asc, count, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import {
@@ -24,110 +25,129 @@ async function requirePlatformAdmin() {
   return session;
 }
 
-/** Create login credentials and attach user to an organization (staff-only). */
-export async function provisionClientUserAction(input: {
+/**
+ * Invite a business user to an org via Clerk.
+ *
+ * - If the email already has a Clerk account: we just link them (or no-op).
+ * - Otherwise: create a Clerk invitation carrying `publicMetadata.pendingOrgId`.
+ *   When the invitee clicks the email, finishes sign-up at `/sign-up`, and
+ *   hits any authenticated route, `ensureAppUser()` creates the local user
+ *   row AND the organization_member row automatically.
+ */
+export async function inviteClientUserAction(input: {
   organizationId: string;
-  name: string;
   email: string;
-  password: string;
 }) {
   await requirePlatformAdmin();
 
-  const name = input.name.trim();
   const email = input.email.trim().toLowerCase();
-  const password = input.password;
-
-  if (name.length < 1) return { error: "Name is required" };
   if (!email.includes("@")) return { error: "Invalid email" };
-  if (password.length < 8) {
-    return { error: "Password must be at least 8 characters" };
-  }
 
   const [org] = await db
-    .select({ id: organization.id })
+    .select({ id: organization.id, name: organization.name })
     .from(organization)
     .where(eq(organization.id, input.organizationId))
     .limit(1);
   if (!org) return { error: "Organization not found" };
 
-  const [existing] = await db
+  // Case 1: user row already exists locally — link membership directly.
+  const [localUser] = await db
     .select({ id: userTable.id })
     .from(userTable)
     .where(eq(userTable.email, email))
     .limit(1);
-
-  if (existing) {
+  if (localUser) {
     try {
       await db.insert(organizationMember).values({
         id: randomUUID(),
         organizationId: org.id,
-        userId: existing.id,
+        userId: localUser.id,
         role: "member",
         createdAt: new Date(),
       });
     } catch (e) {
-      const err = e as { code?: string };
-      if (err.code === "23505") {
+      if ((e as { code?: string }).code === "23505") {
         return { error: "That user is already a member of this organization." };
       }
       throw e;
     }
     revalidatePath("/admin");
+    revalidatePath(`/admin/organizations/${org.id}`);
     return {
       ok: true as const,
       mode: "linked_existing" as const,
       message:
-        "User already existed; they have been added to this organization. Share password only if they never signed in before.",
+        "User already existed; they have been added to this organization. They can sign in immediately.",
     };
   }
 
-  const origin = getAppOrigin();
-  const res = await fetch(`${origin}/api/auth/sign-up/email`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, email, password }),
+  // Case 2: check Clerk for an existing account under this email.
+  const client = await clerkClient();
+  const existingClerkUsers = await client.users.getUserList({
+    emailAddress: [email],
+    limit: 1,
   });
-
-  const raw = await res.text();
-  let body: { message?: string; user?: { id: string } } = {};
-  try {
-    body = JSON.parse(raw) as typeof body;
-  } catch {
-    /* ignore */
-  }
-
-  if (!res.ok) {
+  if (existingClerkUsers.totalCount > 0) {
+    const clerkUser = existingClerkUsers.data[0];
+    await db
+      .insert(userTable)
+      .values({
+        id: clerkUser.id,
+        email,
+        name:
+          [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
+          email,
+        emailVerified: true,
+      })
+      .onConflictDoNothing({ target: userTable.id });
+    try {
+      await db.insert(organizationMember).values({
+        id: randomUUID(),
+        organizationId: org.id,
+        userId: clerkUser.id,
+        role: "member",
+        createdAt: new Date(),
+      });
+    } catch (e) {
+      if ((e as { code?: string }).code === "23505") {
+        return { error: "That user is already a member of this organization." };
+      }
+      throw e;
+    }
+    revalidatePath("/admin");
+    revalidatePath(`/admin/organizations/${org.id}`);
     return {
-      error:
-        body.message ??
-        `Could not create account (${res.status}). Check server logs.`,
+      ok: true as const,
+      mode: "linked_existing" as const,
+      message: "User already had a Clerk account — linked to this business.",
     };
   }
 
-  const [created] = await db
-    .select({ id: userTable.id })
-    .from(userTable)
-    .where(eq(userTable.email, email))
-    .limit(1);
-
-  if (!created) {
-    return { error: "Account created but user row not found; check database." };
+  // Case 3: fresh invitation via Clerk.
+  const origin = getAppOrigin();
+  try {
+    await client.invitations.createInvitation({
+      emailAddress: email,
+      redirectUrl: `${origin}/sign-up`,
+      publicMetadata: { pendingOrgId: org.id },
+      notify: true,
+    });
+  } catch (e) {
+    console.error("[inviteClientUserAction] clerk invitation failed", e);
+    const message =
+      e instanceof Error
+        ? e.message
+        : "Could not send Clerk invitation; check server logs.";
+    return { error: message };
   }
-
-  await db.insert(organizationMember).values({
-    id: randomUUID(),
-    organizationId: org.id,
-    userId: created.id,
-    role: "member",
-    createdAt: new Date(),
-  });
 
   revalidatePath("/admin");
+  revalidatePath(`/admin/organizations/${org.id}`);
   return {
     ok: true as const,
-    mode: "created" as const,
+    mode: "invited" as const,
     message:
-      "Account created. Send the client their email and password using a secure channel.",
+      "Invitation email sent. When they accept, they are automatically added to this business.",
   };
 }
 
@@ -139,59 +159,50 @@ export async function countPlatformAdmins() {
   return Number(row?.c ?? 0);
 }
 
-/** One-time first staff account when no platform admins exist. */
-export async function bootstrapFirstAdminAction(input: {
-  token?: string;
-  name: string;
-  email: string;
-  password: string;
-}) {
-  const admins = await countPlatformAdmins();
-  if (admins > 0) {
-    return { error: "Setup already completed. Sign in at /admin/login." };
-  }
+export async function listPlatformStaffForAdmin() {
+  await requirePlatformAdmin();
+  return db
+    .select({
+      id: userTable.id,
+      email: userTable.email,
+      name: userTable.name,
+      createdAt: userTable.createdAt,
+    })
+    .from(userTable)
+    .where(eq(userTable.platformAdmin, true))
+    .orderBy(asc(userTable.email));
+}
 
-  const expected = process.env.CHATHUB_SETUP_TOKEN?.trim();
-  if (process.env.NODE_ENV === "production" && !expected) {
+/**
+ * Grant staff console access to an existing account (same dashboard as other admins).
+ *
+ * Requires that the user has already signed in at least once so our local
+ * `user` row exists. Otherwise we can't promote — ask them to sign in first,
+ * or add their email to CHATHUB_PLATFORM_ADMIN_EMAILS which auto-promotes on
+ * first sign-in.
+ */
+export async function promotePlatformStaffByEmailAction(input: { email: string }) {
+  await requirePlatformAdmin();
+  const email = input.email.trim().toLowerCase();
+  if (!email.includes("@")) {
+    return { error: "Invalid email" };
+  }
+  const [u] = await db
+    .select({ id: userTable.id })
+    .from(userTable)
+    .where(eq(userTable.email, email))
+    .limit(1);
+  if (!u) {
     return {
       error:
-        "Set CHATHUB_SETUP_TOKEN in the server environment, then open this page with ?token=…",
+        "No user with that email yet. Ask them to sign in once (so the row is created), or add the email to CHATHUB_PLATFORM_ADMIN_EMAILS and redeploy.",
     };
   }
-  if (expected && input.token?.trim() !== expected) {
-    return { error: "Invalid setup token." };
-  }
-
-  const name = input.name.trim();
-  const email = input.email.trim().toLowerCase();
-  const password = input.password;
-  if (password.length < 10) {
-    return { error: "Use a strong password (at least 10 characters)." };
-  }
-
-  const origin = getAppOrigin();
-  const res = await fetch(`${origin}/api/auth/sign-up/email`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, email, password }),
-  });
-
-  if (!res.ok) {
-    const raw = await res.text();
-    let msg = `Sign-up failed (${res.status})`;
-    try {
-      const j = JSON.parse(raw) as { message?: string };
-      if (j.message) msg = j.message;
-    } catch {
-      /* ignore */
-    }
-    return { error: msg };
-  }
-
   await db
     .update(userTable)
     .set({ platformAdmin: true, updatedAt: new Date() })
-    .where(eq(userTable.email, email));
-
+    .where(eq(userTable.id, u.id));
+  revalidatePath("/admin/staff");
+  revalidatePath("/admin");
   return { ok: true as const };
 }

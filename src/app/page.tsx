@@ -18,21 +18,18 @@ export default function HomePage() {
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
           <Button asChild className="w-full min-h-11 sm:w-auto">
-            <Link href="/login">Business dashboard</Link>
+            <Link href="/sign-in?redirect_url=%2Fapp">Business dashboard</Link>
           </Button>
           <Button variant="secondary" asChild className="w-full min-h-11 sm:w-auto">
-            <Link href="/admin/login">Staff console</Link>
+            <Link href="/sign-in?redirect_url=%2Fadmin">Staff console</Link>
           </Button>
           <Button variant="outline" asChild className="w-full min-h-11 border-white/20 bg-white/5 hover:bg-white/10 sm:w-auto">
             <Link href="/demo">Preview demo UI</Link>
           </Button>
         </div>
         <p className="text-xs text-zinc-600">
-          First deploy? Create the first staff user at{" "}
-          <Link href="/admin/bootstrap" className="text-emerald-500 hover:underline">
-            /admin/bootstrap
-          </Link>{" "}
-          (see README).
+          First deploy? Set <code className="text-emerald-400">CHATHUB_PLATFORM_ADMIN_EMAILS</code> to
+          your email, then sign in — you become a platform admin automatically.
         </p>
       </div>
     </div>

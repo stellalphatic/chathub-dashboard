@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { getOrganizationAdmin } from "@/app/admin/actions";
 import { AddMemberForm } from "./add-member-form";
+import { OrgConfigLockForm } from "./org-config-lock-form";
 import { ProvisionClientForm } from "./provision-client-form";
 import { db } from "@/db";
 import { organizationMember, user as userTable } from "@/db/schema";
@@ -23,6 +24,12 @@ export default async function OrganizationAdminPage({
   const { id } = await params;
   const org = await getOrganizationAdmin(id);
   if (!org) notFound();
+
+  const settings =
+    org.settings && typeof org.settings === "object" && !Array.isArray(org.settings)
+      ? (org.settings as Record<string, unknown>)
+      : {};
+  const clientConfigLocked = Boolean(settings.clientConfigReadOnly);
 
   const members = await db
     .select({
@@ -55,13 +62,25 @@ export default async function OrganizationAdminPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Client login (recommended)</CardTitle>
+          <CardTitle>Client config lock</CardTitle>
           <CardDescription>
-            Create email + password for the business. They sign in at{" "}
-            <Link href="/login" className="text-emerald-400 hover:underline">
-              /login
-            </Link>
-            — no public registration.
+            Require businesses to go through staff for persona and channel changes.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <OrgConfigLockForm organizationId={org.id} initiallyLocked={clientConfigLocked} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Invite client login (recommended)</CardTitle>
+          <CardDescription>
+            Sends a Clerk invitation email. The user signs up via one-time code at{" "}
+            <Link href="/sign-up" className="text-emerald-400 hover:underline">
+              /sign-up
+            </Link>{" "}
+            — no shared passwords, no public registration.
           </CardDescription>
         </CardHeader>
         <CardContent>
