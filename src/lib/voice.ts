@@ -25,6 +25,24 @@ async function fetchAudio(mediaUrl: string): Promise<Blob> {
   return new Blob([buf], { type });
 }
 
+/**
+ * Language-specific Whisper prompt. When set, Whisper biases its output
+ * towards the prompt's script. This matters for Urdu/Hindi because:
+ *   - Spoken Urdu and Hindi are ~90% identical (mutually intelligible).
+ *   - Whisper will happily output either script based on weak signals.
+ *   - To force Urdu Arabic script even when the speaker uses Hindi vocab,
+ *     we pass `language=ur` AND a sample Urdu prompt.
+ */
+function whisperPromptForLanguage(lang: string): string | undefined {
+  const key = lang.trim().toLowerCase().split("-")[0];
+  const prompts: Record<string, string> = {
+    ur: "یہ ایک اردو گفتگو ہے۔ براہ کرم اسے اردو رسم الخط میں نقل کریں۔",
+    hi: "यह एक हिंदी बातचीत है।",
+    ar: "هذه محادثة باللغة العربية.",
+  };
+  return prompts[key];
+}
+
 export async function transcribeAudio(opts: {
   mediaUrl?: string;
   blob?: Blob;
@@ -42,6 +60,8 @@ export async function transcribeAudio(opts: {
       form.append("model", process.env.GROQ_WHISPER_MODEL ?? "whisper-large-v3-turbo");
       if (opts.preferredLanguage) {
         form.append("language", opts.preferredLanguage);
+        const prompt = whisperPromptForLanguage(opts.preferredLanguage);
+        if (prompt) form.append("prompt", prompt);
       }
       form.append("response_format", "verbose_json");
       const res = await fetch(
@@ -73,6 +93,8 @@ export async function transcribeAudio(opts: {
     form.append("model", process.env.OPENAI_WHISPER_MODEL ?? "whisper-1");
     if (opts.preferredLanguage) {
       form.append("language", opts.preferredLanguage);
+      const prompt = whisperPromptForLanguage(opts.preferredLanguage);
+      if (prompt) form.append("prompt", prompt);
     }
     form.append("response_format", "verbose_json");
     const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
