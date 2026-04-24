@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { CheckCircle2, Clock3, FileText, XCircle } from "lucide-react";
 import { db } from "@/db";
 import { document } from "@/db/schema";
-import { assertOrgMember } from "@/lib/org-access";
+import { assertOrgAdmin } from "@/lib/org-access";
 import {
   Card,
   CardContent,
@@ -41,7 +41,7 @@ export default async function KnowledgePage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const { org } = await assertOrgMember(orgSlug);
+  const { org } = await assertOrgAdmin(orgSlug);
 
   const docs = await db
     .select()

@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { FileText } from "lucide-react";
 import { db } from "@/db";
 import { template } from "@/db/schema";
-import { assertOrgMember } from "@/lib/org-access";
+import { assertOrgAdmin } from "@/lib/org-access";
 import {
   Card,
   CardContent,
@@ -29,7 +29,7 @@ export default async function TemplatesPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const { org } = await assertOrgMember(orgSlug);
+  const { org } = await assertOrgAdmin(orgSlug);
 
   const rows = await db
     .select()

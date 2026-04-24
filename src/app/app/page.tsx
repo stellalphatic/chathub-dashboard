@@ -7,7 +7,7 @@ import { organization, organizationMember, user as userTable } from "@/db/schema
 import { getServerSession } from "@/lib/session";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function AppHomePage() {
   const session = await getServerSession();
@@ -18,22 +18,29 @@ export default async function AppHomePage() {
     .from(userTable)
     .where(eq(userTable.id, session.user.id))
     .limit(1);
+  const isAdmin = Boolean(me?.platformAdmin);
 
-  const orgs = await db
-    .select({
-      id: organization.id,
-      slug: organization.slug,
-      name: organization.name,
-    })
-    .from(organizationMember)
-    .innerJoin(
-      organization,
-      eq(organizationMember.organizationId, organization.id),
-    )
-    .where(eq(organizationMember.userId, session.user.id))
-    .orderBy(asc(organization.name));
+  // Platform admins see EVERY organization; business users only see the orgs they're a member of.
+  const orgs = isAdmin
+    ? await db
+        .select({ id: organization.id, slug: organization.slug, name: organization.name })
+        .from(organization)
+        .orderBy(asc(organization.name))
+    : await db
+        .select({
+          id: organization.id,
+          slug: organization.slug,
+          name: organization.name,
+        })
+        .from(organizationMember)
+        .innerJoin(
+          organization,
+          eq(organizationMember.organizationId, organization.id),
+        )
+        .where(eq(organizationMember.userId, session.user.id))
+        .orderBy(asc(organization.name));
 
-  if (orgs.length === 1 && !me?.platformAdmin) {
+  if (orgs.length === 1 && !isAdmin) {
     redirect(`/app/${orgs[0].slug}`);
   }
 
@@ -44,24 +51,26 @@ export default async function AppHomePage() {
           <h1 className="text-2xl font-semibold tracking-tight text-[rgb(var(--fg))]">
             Your workspaces
           </h1>
-          {me?.platformAdmin ? <Badge variant="gradient">Platform admin</Badge> : null}
+          {isAdmin ? <Badge variant="gradient">Platform admin</Badge> : null}
         </div>
         <p className="mt-1 text-sm text-[rgb(var(--fg-muted))]">
-          Pick a business to manage. Inbox, CRM, bots and analytics are scoped per organization.
+          {isAdmin
+            ? "Open any business dashboard to manage integrations, the bot, knowledge base, and analytics."
+            : "Pick a business to manage. Inbox, CRM and analytics are scoped per organization."}
         </p>
       </div>
 
       {orgs.length === 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>No organizations yet</CardTitle>
+            <CardTitle>No businesses yet</CardTitle>
             <CardDescription>
-              {me?.platformAdmin
+              {isAdmin
                 ? "Create a business to get started."
                 : "Ask your ChatHub administrator to add your account to a business."}
             </CardDescription>
           </CardHeader>
-          {me?.platformAdmin ? (
+          {isAdmin ? (
             <CardContent>
               <Button asChild variant="gradient">
                 <Link href="/admin/organizations/new">
@@ -93,19 +102,14 @@ export default async function AppHomePage() {
               </Card>
             </Link>
           ))}
-          {me?.platformAdmin ? (
+          {isAdmin ? (
             <Link href="/admin/organizations/new" className="fade-up-item">
-              <Card
-                interactive
-                className="h-full border-dashed text-center"
-              >
+              <Card interactive className="h-full border-dashed text-center">
                 <CardContent className="flex h-full flex-col items-center justify-center gap-2 p-6">
                   <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[rgb(var(--surface-2))] text-[rgb(var(--fg-muted))]">
                     <Plus className="h-5 w-5" />
                   </span>
-                  <p className="text-sm font-medium text-[rgb(var(--fg))]">
-                    New business
-                  </p>
+                  <p className="text-sm font-medium text-[rgb(var(--fg))]">New business</p>
                   <p className="text-xs text-[rgb(var(--fg-subtle))]">
                     Create from the staff console
                   </p>

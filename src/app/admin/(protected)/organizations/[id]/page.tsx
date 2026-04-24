@@ -15,7 +15,7 @@ import { AddMemberForm } from "./add-member-form";
 import { OrgConfigLockForm } from "./org-config-lock-form";
 import { ProvisionClientForm } from "./provision-client-form";
 import { db } from "@/db";
-import { organizationMember, user as userTable } from "@/db/schema";
+import { channelConnection, organizationMember, user as userTable } from "@/db/schema";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { IntegrationsList } from "@/components/channels/integrations-list";
 
 export default async function OrganizationAdminPage({
   params,
@@ -52,6 +53,17 @@ export default async function OrganizationAdminPage({
     .from(organizationMember)
     .innerJoin(userTable, eq(organizationMember.userId, userTable.id))
     .where(eq(organizationMember.organizationId, org.id));
+
+  const connectedChannels = await db
+    .select({
+      provider: channelConnection.provider,
+      channel: channelConnection.channel,
+      externalId: channelConnection.externalId,
+    })
+    .from(channelConnection)
+    .where(eq(channelConnection.organizationId, org.id));
+
+  const appOrigin = process.env.NEXT_PUBLIC_APP_URL ?? "";
 
   return (
     <div className="space-y-6">
@@ -239,32 +251,52 @@ export default async function OrganizationAdminPage({
           </Card>
         </TabsContent>
 
-        {/* INTEGRATIONS (status / shortcuts) */}
+        {/* INTEGRATIONS — inline channel configuration + deep links */}
         <TabsContent value="integrations">
-          <Card>
-            <CardHeader>
-              <CardTitle>Integrations</CardTitle>
-              <CardDescription>
-                Channel and model integrations live on the client dashboard. Use these shortcuts
-                to jump straight in (staff can edit even when the config is locked).
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-2 sm:grid-cols-2">
-              {[
-                { href: `/app/${org.slug}/channels`, label: "Channels (YCloud / Meta / ManyChat)" },
-                { href: `/app/${org.slug}/bot`, label: "Bot config (persona, style, prompt)" },
-                { href: `/app/${org.slug}/knowledge`, label: "Knowledge base (RAG docs)" },
-                { href: `/app/${org.slug}/templates`, label: "Message templates" },
-                { href: `/app/${org.slug}/broadcasts`, label: "Broadcasts & scheduling" },
-              ].map((l) => (
-                <Button key={l.href} asChild variant="secondary" className="justify-between">
-                  <Link href={l.href}>
-                    {l.label} <ExternalLink className="h-3.5 w-3.5" />
-                  </Link>
-                </Button>
-              ))}
-            </CardContent>
-          </Card>
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Channel connections</CardTitle>
+                <CardDescription>
+                  Set up WhatsApp, Instagram, and Messenger for this business here — no need
+                  to leave the staff console. Expand any card for the step-by-step guide.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <IntegrationsList
+                  orgSlug={org.slug}
+                  appOrigin={appOrigin}
+                  connected={connectedChannels}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Other configuration</CardTitle>
+                <CardDescription>
+                  Open the full business dashboard for Bot persona, Knowledge base, Templates,
+                  and Broadcasts. You&apos;ll have staff-level access to every page.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-2 sm:grid-cols-2">
+                {[
+                  { href: `/app/${org.slug}`, label: "Overview / analytics" },
+                  { href: `/app/${org.slug}/bot`, label: "Bot config (persona, style, prompt)" },
+                  { href: `/app/${org.slug}/knowledge`, label: "Knowledge base (RAG docs)" },
+                  { href: `/app/${org.slug}/templates`, label: "Message templates" },
+                  { href: `/app/${org.slug}/broadcasts`, label: "Broadcasts & scheduling" },
+                  { href: `/app/${org.slug}/inbox`, label: "Live inbox" },
+                ].map((l) => (
+                  <Button key={l.href} asChild variant="secondary" className="justify-between">
+                    <Link href={l.href}>
+                      {l.label} <ExternalLink className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

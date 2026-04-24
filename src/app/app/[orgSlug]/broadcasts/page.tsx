@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { Megaphone } from "lucide-react";
 import { db } from "@/db";
 import { broadcast, template } from "@/db/schema";
-import { assertOrgMember } from "@/lib/org-access";
+import { assertOrgAdmin } from "@/lib/org-access";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -29,7 +29,7 @@ export default async function BroadcastsPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const { org } = await assertOrgMember(orgSlug);
+  const { org } = await assertOrgAdmin(orgSlug);
 
   const templates = await db
     .select({

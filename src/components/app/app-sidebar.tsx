@@ -7,6 +7,7 @@ import {
   FileText,
   Home,
   Inbox,
+  Lock,
   Megaphone,
   MessageSquareText,
   PanelLeftClose,
@@ -22,38 +23,51 @@ import { cn } from "@/lib/utils";
 
 type Org = { slug: string; name: string };
 
-const SECTIONS = (slug: string) => [
-  {
-    label: "Workspace",
-    items: [
-      { href: `/app/${slug}`, icon: Home, label: "Overview", match: "exact" as const },
-      { href: `/app/${slug}/inbox`, icon: Inbox, label: "Inbox" },
-      { href: `/app/${slug}/crm`, icon: Users, label: "Customers" },
-    ],
-  },
-  {
-    label: "Messaging",
-    items: [
-      { href: `/app/${slug}/broadcasts`, icon: Megaphone, label: "Broadcasts" },
-      { href: `/app/${slug}/templates`, icon: FileText, label: "Templates" },
-    ],
-  },
-  {
-    label: "Intelligence",
-    items: [
-      { href: `/app/${slug}/bot`, icon: Bot, label: "Bot" },
-      { href: `/app/${slug}/knowledge`, icon: Boxes, label: "Knowledge" },
-    ],
-  },
-  {
-    label: "Integrations",
-    items: [{ href: `/app/${slug}/channels`, icon: Plug, label: "Channels" }],
-  },
-  {
-    label: "Org",
-    items: [{ href: `/app/${slug}/team`, icon: UserCog, label: "Team" }],
-  },
-];
+type NavItem = {
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  match?: "exact";
+  /** Only platform admins see this item. */
+  adminOnly?: boolean;
+};
+
+function buildSections(slug: string): { label: string; items: NavItem[] }[] {
+  return [
+    {
+      label: "Workspace",
+      items: [
+        { href: `/app/${slug}`, icon: Home, label: "Overview", match: "exact" },
+        { href: `/app/${slug}/inbox`, icon: Inbox, label: "Inbox" },
+        { href: `/app/${slug}/crm`, icon: Users, label: "Customers" },
+      ],
+    },
+    {
+      label: "Messaging",
+      items: [
+        { href: `/app/${slug}/broadcasts`, icon: Megaphone, label: "Broadcasts", adminOnly: true },
+        { href: `/app/${slug}/templates`, icon: FileText, label: "Templates", adminOnly: true },
+      ],
+    },
+    {
+      label: "Intelligence",
+      items: [
+        { href: `/app/${slug}/bot`, icon: Bot, label: "Bot", adminOnly: true },
+        { href: `/app/${slug}/knowledge`, icon: Boxes, label: "Knowledge", adminOnly: true },
+      ],
+    },
+    {
+      label: "Integrations",
+      items: [
+        { href: `/app/${slug}/channels`, icon: Plug, label: "Channels", adminOnly: true },
+      ],
+    },
+    {
+      label: "Org",
+      items: [{ href: `/app/${slug}/team`, icon: UserCog, label: "Team" }],
+    },
+  ];
+}
 
 export function AppSidebar({
   orgs,
@@ -75,12 +89,19 @@ export function AppSidebar({
     setMobileOpen(false);
   }, [pathname]);
 
-  const sections = SECTIONS(currentSlug);
+  // Pick the slug from the current URL so the sidebar always shows the right context.
+  const urlMatch = pathname?.match(/^\/app\/([^/]+)/);
+  const activeSlug = urlMatch?.[1] ?? currentSlug;
+
+  const sections = buildSections(activeSlug).map((section) => ({
+    ...section,
+    items: section.items.filter((item) => !item.adminOnly || platformAdmin),
+  }));
+
   const widthClass = collapsed ? "md:w-[4.5rem]" : "md:w-64";
 
   return (
     <>
-      {/* Mobile header */}
       <div className="sticky top-0 z-30 flex items-center justify-between border-b border-[rgb(var(--border))] bg-[rgb(var(--bg)/0.8)] px-4 py-3 backdrop-blur-xl md:hidden">
         <Link href="/app" className="flex items-center gap-2 font-semibold">
           <span className="flex h-8 w-8 items-center justify-center rounded-xl gradient-brand text-white">
@@ -98,7 +119,6 @@ export function AppSidebar({
         </button>
       </div>
 
-      {/* Backdrop for mobile */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/40 md:hidden"
@@ -106,18 +126,14 @@ export function AppSidebar({
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex h-dvh flex-col border-r border-[rgb(var(--border))] bg-[rgb(var(--surface))] transition-all duration-200",
           "w-72 max-w-[85vw]",
           widthClass,
-          mobileOpen
-            ? "translate-x-0"
-            : "-translate-x-full md:translate-x-0",
+          mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
         )}
       >
-        {/* Brand */}
         <div className="flex h-16 items-center justify-between border-b border-[rgb(var(--border))] px-4">
           <Link href="/app" className="flex items-center gap-2 font-semibold">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl gradient-brand text-white shadow-md">
@@ -139,7 +155,6 @@ export function AppSidebar({
           </button>
         </div>
 
-        {/* Org switcher */}
         {orgs.length > 0 && !collapsed && (
           <div className="border-b border-[rgb(var(--border))] p-3">
             <label
@@ -150,7 +165,7 @@ export function AppSidebar({
             </label>
             <select
               id="org-switch"
-              value={currentSlug}
+              value={activeSlug}
               onChange={(e) => router.push(`/app/${e.target.value}`)}
               className="mt-1 w-full rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-3 py-2 text-sm text-[rgb(var(--fg))]"
             >
@@ -163,11 +178,21 @@ export function AppSidebar({
           </div>
         )}
 
-        {/* Nav sections */}
+        {!platformAdmin && !collapsed ? (
+          <div className="border-b border-[rgb(var(--border))] p-3">
+            <div className="flex items-start gap-2 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-2 text-[11px] text-[rgb(var(--fg-muted))]">
+              <Lock className="mt-0.5 h-3 w-3 shrink-0 text-[rgb(var(--fg-subtle))]" />
+              <span>
+                Bot, channels, knowledge and templates are managed by your ChatHub administrator.
+              </span>
+            </div>
+          </div>
+        ) : null}
+
         <nav className="flex-1 overflow-y-auto px-2 py-3">
           {sections.map((section) => (
             <div key={section.label} className="mb-4">
-              {!collapsed && (
+              {!collapsed && section.items.length > 0 && (
                 <p className="px-3 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
                   {section.label}
                 </p>
@@ -175,7 +200,7 @@ export function AppSidebar({
               <ul className="space-y-0.5">
                 {section.items.map((item) => {
                   const active =
-                    ("match" in item && item.match === "exact")
+                    item.match === "exact"
                       ? pathname === item.href
                       : pathname === item.href || pathname.startsWith(`${item.href}/`);
                   return (
@@ -201,7 +226,6 @@ export function AppSidebar({
           ))}
         </nav>
 
-        {/* Footer — user + admin shortcut */}
         <div className="border-t border-[rgb(var(--border))] p-3">
           {platformAdmin && (
             <Link
@@ -226,9 +250,4 @@ export function AppSidebar({
       </aside>
     </>
   );
-}
-
-export function AppSidebarClose() {
-  // Used only to push main content right of the sidebar (md+ layout).
-  return null;
 }

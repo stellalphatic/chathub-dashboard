@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { CheckCircle2, Plug } from "lucide-react";
 import { db } from "@/db";
 import { channelConnection } from "@/db/schema";
-import { assertOrgMember } from "@/lib/org-access";
+import { assertOrgAdmin } from "@/lib/org-access";
 import {
   Card,
   CardContent,
@@ -20,7 +20,7 @@ export default async function ChannelsPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const { org } = await assertOrgMember(orgSlug);
+  const { org } = await assertOrgAdmin(orgSlug);
 
   const rows = await db
     .select()

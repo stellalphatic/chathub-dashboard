@@ -58,20 +58,41 @@ type OrgRow = NonNullable<Awaited<ReturnType<typeof getOrgAccess>>>["org"];
 
 type OrgIntegrationGate = { ok: true; org: OrgRow; userId: string } | { ok: false; error: string };
 
-/** Bot persona, FAQs, and channel integrations — optionally staff-only per org. */
+/**
+ * Bot persona, FAQs, documents, templates, channels, broadcasts — STAFF ONLY.
+ *
+ * Product rule: business users never configure anything. All write paths for
+ * configuration flow through platform admins. The per-org `clientConfigReadOnly`
+ * setting is kept for backwards-compat but the lock is now the default.
+ */
 async function requireOrgIntegrationWrite(orgSlug: string): Promise<OrgIntegrationGate> {
   const access = await getOrgAccess(orgSlug);
   if (!access) return { ok: false, error: "Unauthorized" };
   const { org, userId } = access;
   if (await isUserPlatformStaff(userId)) return { ok: true, org, userId };
-  if (isOrgClientConfigReadOnlyLocked(org)) {
+  // Soft escape hatch: leave CHATHUB_FORCE_CLIENT_CONFIG_READ_ONLY unset AND
+  // the org setting `clientConfigReadOnly` explicitly false to let members edit.
+  if (isOrgClientConfigReadOnlyLocked(org) || isOrgClientConfigDefaultLocked(org)) {
     return {
       ok: false,
       error:
-        "Persona and channel integrations are managed by Clona staff for this business. Contact your administrator to request changes.",
+        "This section is managed by Clona staff. Contact your administrator to request changes.",
     };
   }
   return { ok: true, org, userId };
+}
+
+/**
+ * Lock by default: if the org settings don't explicitly say
+ * `clientConfigReadOnly: false`, we treat it as locked. Flip to false in the
+ * admin console if you want a particular business to self-serve.
+ */
+function isOrgClientConfigDefaultLocked(org: { settings: unknown }): boolean {
+  const s = org.settings;
+  if (!s || typeof s !== "object" || Array.isArray(s)) return true;
+  const v = (s as Record<string, unknown>).clientConfigReadOnly;
+  // Unset or truthy = locked; only explicit `false` opens up writes.
+  return v !== false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

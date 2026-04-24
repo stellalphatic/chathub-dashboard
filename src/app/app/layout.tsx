@@ -21,19 +21,20 @@ export default async function AppShellLayout({
     .from(userTable)
     .where(eq(userTable.id, session.user.id))
     .limit(1);
+  const isAdmin = Boolean(me?.platformAdmin);
 
-  const orgs = await db
-    .select({
-      slug: organization.slug,
-      name: organization.name,
-    })
-    .from(organizationMember)
-    .innerJoin(
-      organization,
-      eq(organizationMember.organizationId, organization.id),
-    )
-    .where(eq(organizationMember.userId, session.user.id))
-    .orderBy(asc(organization.name));
+  // Admins can jump into ANY business; members only see the ones they belong to.
+  const orgs = isAdmin
+    ? await db
+        .select({ slug: organization.slug, name: organization.name })
+        .from(organization)
+        .orderBy(asc(organization.name))
+    : await db
+        .select({ slug: organization.slug, name: organization.name })
+        .from(organizationMember)
+        .innerJoin(organization, eq(organizationMember.organizationId, organization.id))
+        .where(eq(organizationMember.userId, session.user.id))
+        .orderBy(asc(organization.name));
 
   return (
     <div className="min-h-screen bg-[rgb(var(--bg-muted))]">
@@ -41,7 +42,7 @@ export default async function AppShellLayout({
         orgs={orgs}
         currentSlug={orgs[0]?.slug ?? ""}
         userEmail={session.user.email}
-        platformAdmin={Boolean(me?.platformAdmin)}
+        platformAdmin={isAdmin}
       />
       <div className="md:pl-64">
         <AppTopbar />

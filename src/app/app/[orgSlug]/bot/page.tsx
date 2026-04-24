@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { botConfig, botFaq } from "@/db/schema";
-import { assertOrgMember } from "@/lib/org-access";
+import { assertOrgAdmin } from "@/lib/org-access";
 import {
   Card,
   CardContent,
@@ -18,7 +18,7 @@ export default async function BotPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const { org } = await assertOrgMember(orgSlug);
+  const { org } = await assertOrgAdmin(orgSlug);
 
   const [cfg] = await db
     .select()
