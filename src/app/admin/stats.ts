@@ -1,10 +1,9 @@
-import { and, asc, count, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   botConfig,
   botFaq,
   channelConnection,
-  conversation,
   customer,
   document,
   llmUsage,
@@ -134,7 +133,7 @@ export async function getAdminPlatformStats(): Promise<AdminPlatformStats> {
       })
       .from(message)
       .where(
-        and(gte(message.createdAt, since48h), sql`${message.createdAt} < ${since24h}`),
+        and(gte(message.createdAt, since48h), lt(message.createdAt, since24h)),
       )
       .groupBy(message.organizationId),
     db
@@ -343,4 +342,3 @@ export async function getAdminPlatformStats(): Promise<AdminPlatformStats> {
   };
 }
 
-void desc; // keep import used (types only otherwise)
