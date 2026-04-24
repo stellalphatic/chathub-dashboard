@@ -1,17 +1,20 @@
 # docker compose -f docker-compose.prod.yml up -d
 #
-# Runs on a single EC2 box (t3.medium works for ~200k msgs/mo). For higher
-# scale, put Redis + Qdrant on managed services and scale out the worker
-# container behind the shared Redis.
+# EC2 side of the stack. Amplify hosts the Next.js web app; this file only
+# runs the dependencies and workers that the web app talks to:
+#   - redis: BullMQ queue + shared bot-config cache
+#   - qdrant: vector store for RAG
+#   - worker: BullMQ consumers (inbound-message, llm-reply, outbound-send,
+#             media-archive, voice-transcribe, embed-document,
+#             scheduled-ticker, broadcast-runner)
 #
-# Postgres is NOT included here — use Supabase (recommended) or RDS.
+# Postgres is NOT here — use Supabase.
 #
-# Redis + Qdrant are exposed on all interfaces (0.0.0.0) so Amplify can
-# connect via the instance's Elastic IP. They are protected by:
-#   - REDIS_PASSWORD (required; do not leave blank)
+# Redis + Qdrant are exposed on 0.0.0.0 so Amplify can reach them via the
+# instance's Elastic IP. They are protected by:
+#   - REDIS_PASSWORD (required, URL-safe alphanumeric)
 #   - QDRANT_API_KEY (required)
-#   - the EC2 security group (always lock these ports down to known IPs
-#     if at all possible — public internet exposure should be temporary)
+#   - the EC2 security group (lock these ports to known IPs when possible)
 services:
   redis:
     image: redis:7-alpine
@@ -19,7 +22,7 @@ services:
     command:
       - "redis-server"
       - "--requirepass"
-      - "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env.production}"
+      - "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env.production (use alphanumeric only — no / + = @)}"
       - "--appendonly"
       - "yes"
       - "--maxmemory-policy"
@@ -38,23 +41,6 @@ services:
       - qdrant-data:/qdrant/storage
     ports:
       - "0.0.0.0:6333:6333"
-
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    env_file: .env.production
-    environment:
-      # Inside the compose network, workers/app reach Redis by service name
-      # and MUST use the password.
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-      QDRANT_URL: http://qdrant:6333
-    depends_on:
-      - redis
-      - qdrant
-    ports:
-      - "3000:3000"
 
   worker:
     build:
