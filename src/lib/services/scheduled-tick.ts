@@ -66,7 +66,7 @@ export async function tickScheduled(batchSize = 100) {
         .limit(1);
 
       let conversationId: string | undefined = conv?.id;
-      let lastInboundAt: Date | null = conv?.lastInboundAt ?? null;
+      const lastInboundAt: Date | null = conv?.lastInboundAt ?? null;
 
       if (!conv) {
         // Create a conversation on the fly so history exists.
