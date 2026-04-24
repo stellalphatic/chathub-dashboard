@@ -1,4 +1,4 @@
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { conversation, customer, scheduledMessage, template } from "@/db/schema";
 import { decideSend } from "@/lib/window-24h";
@@ -11,16 +11,18 @@ import { queueOutboundMessage } from "@/lib/services/outbound";
  * Uses a lock column to prevent two workers from double-processing a row.
  */
 export async function tickScheduled(batchSize = 100) {
-  const now = new Date();
   // Pre-filter + lock in a single UPDATE … RETURNING so two workers can't
-  // both claim the same rows.
+  // both claim the same rows. We use Postgres `NOW()` (server time) instead
+  // of passing a JS `Date` as a bound parameter — postgres-js's raw-SQL
+  // path cannot serialize Date objects and throws
+  // "Received an instance of Date".
   const locked = await db.execute<{ id: string }>(sql`
     WITH due AS (
       SELECT id
       FROM scheduled_message
       WHERE status = 'queued'
-        AND run_at <= ${now}
-        AND (locked_until IS NULL OR locked_until < ${now})
+        AND run_at <= NOW()
+        AND (locked_until IS NULL OR locked_until < NOW())
       ORDER BY run_at
       LIMIT ${batchSize}
       FOR UPDATE SKIP LOCKED
@@ -182,13 +184,14 @@ export async function tickScheduled(batchSize = 100) {
 
 /** Release rows whose lock expired (worker crashed mid-process). */
 export async function releaseStaleLocks() {
-  await db
-    .update(scheduledMessage)
-    .set({ status: "queued", lockedUntil: null })
-    .where(
-      and(
-        eq(scheduledMessage.status, "processing"),
-        lt(scheduledMessage.lockedUntil, new Date()),
-      ),
-    );
+  // Raw SQL so we avoid Date → postgres-js binding issues (see tickScheduled).
+  await db.execute(sql`
+    UPDATE scheduled_message
+    SET status = 'queued',
+        locked_until = NULL,
+        updated_at = NOW()
+    WHERE status = 'processing'
+      AND locked_until IS NOT NULL
+      AND locked_until < NOW()
+  `);
 }
