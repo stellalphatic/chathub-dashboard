@@ -57,14 +57,35 @@ export async function enqueue<T>(
   return (q as unknown as Queue).add(name, payload, opts);
 }
 
-/** Repeatable ticker: scheduled message scanner runs every minute. */
+/** Repeatable ticker: scheduled message scanner runs every minute.
+ *
+ * We use `every: 60_000` (interval in ms) instead of a cron `pattern`.
+ * BullMQ 5.x had a serialization bug with cron-pattern repeats where the
+ * next-run Date object reached Redis as-is, throwing
+ * "Received an instance of Date". Interval-based repeats take a different
+ * code path and are not affected.
+ */
 export async function ensureRepeatables() {
   const ticker = getQueue(QUEUES.scheduledTicker);
+
+  // Clean up any old cron-pattern-based repeat from previous deploys so we
+  // don't accumulate stale, broken repeatables in Redis.
+  try {
+    const existing = await ticker.getRepeatableJobs();
+    for (const r of existing) {
+      if (r.name === "tick") {
+        await ticker.removeRepeatableByKey(r.key);
+      }
+    }
+  } catch {
+    // First-run Redis may not have anything to clean — safe to ignore.
+  }
+
   await ticker.add(
     "tick",
     { ts: Date.now() },
     {
-      repeat: { pattern: "*/1 * * * *" },
+      repeat: { every: 60_000 },
       jobId: "scheduled-ticker-repeat",
       removeOnComplete: true,
       removeOnFail: { count: 50 },
