@@ -95,3 +95,65 @@ export async function deleteLlmCredentialAction(input: {
   revalidatePath("/admin/llm");
   return { ok: true };
 }
+
+/**
+ * Run a tiny test call through the router, preferring this provider. Returns
+ * latency + tokens + snippet so the admin can verify a key without digging
+ * into logs. Doesn't change any data.
+ */
+export async function testLlmCredentialAction(input: {
+  provider: "groq" | "gemini" | "openai";
+}): Promise<
+  | {
+      ok: true;
+      latencyMs: number;
+      tokens: number;
+      snippet: string;
+      model: string;
+    }
+  | { error: string }
+> {
+  await requirePlatformAdmin();
+  // Force freshest credentials.
+  clearLlmProviderCache();
+
+  // Lazy-load the router so this action doesn't pull router deps elsewhere.
+  const { llmComplete, LlmRouterError } = await import("@/lib/llm/router");
+
+  try {
+    const out = await llmComplete(
+      {
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a diagnostic. Reply with a single short sentence confirming you're online.",
+          },
+          { role: "user", content: "Are you reachable?" },
+        ],
+        maxOutputTokens: 40,
+        temperature: 0,
+      },
+      {
+        organizationId: "_admin_test_",
+        purpose: "classify",
+      },
+      { providerOrder: [input.provider] },
+    );
+    return {
+      ok: true,
+      latencyMs: out.latencyMs ?? 0,
+      tokens: out.totalTokens ?? 0,
+      snippet: (out.text ?? "").slice(0, 160),
+      model: out.model ?? "",
+    };
+  } catch (e) {
+    if (e instanceof LlmRouterError) {
+      const first = e.attempts[0];
+      return { error: first?.error ?? e.message };
+    }
+    return {
+      error: e instanceof Error ? e.message : "Unknown error",
+    };
+  }
+}

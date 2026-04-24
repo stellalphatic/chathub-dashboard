@@ -26,6 +26,7 @@ export default async function CrmListPage({
         or(
           ilike(customer.phoneE164, searchPattern),
           ilike(sql<string>`coalesce(${customer.displayName}, '')`, searchPattern),
+          ilike(sql<string>`coalesce(${customer.email}, '')`, searchPattern),
         ),
       )
     : eq(customer.organizationId, org.id);
@@ -51,6 +52,9 @@ export default async function CrmListPage({
     id: c.id,
     displayName: c.displayName,
     phoneE164: c.phoneE164,
+    email: c.email,
+    tags: (c.tags ?? []) as string[],
+    status: c.status,
     lastContactedAt: c.lastContactedAt?.toISOString() ?? null,
     meetingBooked: c.meetingBooked,
     meetingTime: c.meetingTime,
@@ -62,17 +66,19 @@ export default async function CrmListPage({
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-white">CRM</h2>
-          <p className="text-sm text-zinc-500">
-            Contacts synced from WhatsApp ingest — edit details, meetings, and
-            custom metadata.
+          <h2 className="text-xl font-semibold tracking-tight text-[rgb(var(--fg))]">
+            Customers
+          </h2>
+          <p className="mt-1 text-sm text-[rgb(var(--fg-muted))]">
+            Contacts synced from WhatsApp, Instagram, and Messenger. Switch views, filter by
+            status or tags, and manage pipelines from one screen.
           </p>
         </div>
-        <p className="text-xs text-zinc-600">
+        <p className="text-xs text-[rgb(var(--fg-subtle))]">
           Tip: open{" "}
           <Link
             href={`/app/${orgSlug}/inbox`}
-            className="text-emerald-400 hover:underline"
+            className="text-[rgb(var(--accent))] hover:underline"
           >
             Inbox
           </Link>{" "}
@@ -82,7 +88,7 @@ export default async function CrmListPage({
 
       <Suspense
         fallback={
-          <div className="h-48 animate-pulse rounded-2xl bg-zinc-900/40" />
+          <div className="h-48 animate-pulse rounded-2xl bg-[rgb(var(--surface-2))]" />
         }
       >
         <CrmListClient orgSlug={orgSlug} initialQuery={term} rows={payload} />

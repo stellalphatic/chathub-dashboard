@@ -1,29 +1,35 @@
 "use client";
 
-import { useTransition } from "react";
+import { Trash2 } from "lucide-react";
 import { deleteChannelAction } from "@/lib/org-actions";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 
 export function DeleteChannelButton({
   orgSlug,
   id,
+  label,
 }: {
   orgSlug: string;
   id: string;
+  label?: string;
 }) {
-  const [pending, start] = useTransition();
   return (
-    <button
-      type="button"
-      disabled={pending}
-      onClick={() => {
-        if (!confirm("Remove this channel connection?")) return;
-        start(async () => {
-          await deleteChannelAction({ orgSlug, id });
-        });
+    <ConfirmButton
+      title="Remove this channel connection?"
+      description={
+        <>
+          The credentials for {label ? <strong>{label}</strong> : "this channel"} will be
+          deleted. Inbound webhooks from this channel will stop routing. You can re-add later.
+        </>
+      }
+      confirmLabel="Remove channel"
+      successToast="Channel removed"
+      action={async () => {
+        const res = await deleteChannelAction({ orgSlug, id });
+        return res;
       }}
-      className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs text-red-200 hover:bg-red-500/20 disabled:opacity-50"
     >
-      {pending ? "…" : "Remove"}
-    </button>
+      <Trash2 className="h-3.5 w-3.5" /> Remove
+    </ConfirmButton>
   );
 }

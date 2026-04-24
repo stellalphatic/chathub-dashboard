@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { CheckCircle2, Plug } from "lucide-react";
 import { db } from "@/db";
 import { channelConnection } from "@/db/schema";
 import { assertOrgMember } from "@/lib/org-access";
@@ -9,8 +10,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ConnectChannelForm } from "@/components/channels/connect-channel-form";
+import { Badge } from "@/components/ui/badge";
 import { DeleteChannelButton } from "@/components/channels/delete-channel-button";
+import { IntegrationsList } from "@/components/channels/integrations-list";
 
 export default async function ChannelsPage({
   params,
@@ -30,70 +32,85 @@ export default async function ChannelsPage({
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-lg font-semibold">Channel connections</h2>
-        <p className="text-sm text-zinc-400">
-          Paste credentials here. Webhook secrets and API keys are encrypted
-          with AES-GCM before storage.
+        <h2 className="text-xl font-semibold tracking-tight text-[rgb(var(--fg))]">
+          Integrations
+        </h2>
+        <p className="mt-1 text-sm text-[rgb(var(--fg-muted))]">
+          Connect WhatsApp, Instagram DM, and Facebook Messenger. Expand any card for the
+          full step-by-step setup guide and the exact webhook URL to paste in the provider.
+          Everything is encrypted at rest with AES-256-GCM.
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Webhook URLs to register</CardTitle>
-          <CardDescription>
-            Point each provider to these URLs. Signature secrets go in server
-            env (see DEPLOY.md).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2 text-xs font-mono text-zinc-300">
-          <p>WhatsApp (YCloud): <span className="text-emerald-400">{appOrigin}/api/webhooks/ycloud</span></p>
-          <p>Instagram / Messenger (Meta): <span className="text-emerald-400">{appOrigin}/api/webhooks/meta</span></p>
-          <p>ManyChat: <span className="text-emerald-400">{appOrigin}/api/webhooks/manychat</span></p>
-        </CardContent>
-      </Card>
+      {/* Connected channels quick summary */}
+      {rows.length > 0 ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              Connected ({rows.length})
+            </CardTitle>
+            <CardDescription>
+              Live channels for this business. Remove any to rotate credentials.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y divide-[rgb(var(--border))] rounded-xl border border-[rgb(var(--border))]">
+              {rows.map((r) => (
+                <li
+                  key={r.id}
+                  className="flex flex-col gap-2 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Plug className="h-4 w-4 text-[rgb(var(--accent))]" />
+                    <div className="min-w-0">
+                      <p className="font-medium">
+                        {r.label || `${r.provider} · ${r.channel}`}
+                      </p>
+                      <p className="truncate font-mono text-[10px] text-[rgb(var(--fg-subtle))]">
+                        {r.provider} · {r.channel}
+                        {r.externalId ? ` · ${r.externalId}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant={r.status === "active" ? "success" : "secondary"}
+                      className="text-[10px]"
+                    >
+                      {r.status}
+                    </Badge>
+                    {r.lastErrorMessage ? (
+                      <span
+                        className="max-w-[16rem] truncate text-[11px] text-rose-500"
+                        title={r.lastErrorMessage}
+                      >
+                        {r.lastErrorMessage}
+                      </span>
+                    ) : null}
+                    <DeleteChannelButton
+                      orgSlug={orgSlug}
+                      id={r.id}
+                      label={r.label ?? `${r.provider} · ${r.channel}`}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
 
-      <div className="space-y-4">
-        {rows.length === 0 ? (
-          <p className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-zinc-400">
-            No channels connected yet.
-          </p>
-        ) : (
-          rows.map((r) => (
-            <Card key={r.id}>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between gap-2 text-base">
-                  <span>
-                    {r.label || `${r.provider} → ${r.channel}`}
-                  </span>
-                  <DeleteChannelButton orgSlug={orgSlug} id={r.id} />
-                </CardTitle>
-                <CardDescription className="font-mono text-xs">
-                  {r.provider} · {r.channel}{r.externalId ? ` · ${r.externalId}` : ""}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="text-xs text-zinc-400">
-                status: <span className="text-emerald-300">{r.status}</span>
-                {r.lastErrorMessage && (
-                  <p className="mt-1 text-red-300">last error: {r.lastErrorMessage}</p>
-                )}
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Connect a new channel</CardTitle>
-          <CardDescription>
-            Provider + credentials. You can rotate later by deleting and
-            re-adding.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ConnectChannelForm orgSlug={orgSlug} />
-        </CardContent>
-      </Card>
+      {/* Advanced per-provider integration catalogue */}
+      <IntegrationsList
+        orgSlug={orgSlug}
+        appOrigin={appOrigin}
+        connected={rows.map((r) => ({
+          provider: r.provider,
+          channel: r.channel,
+          externalId: r.externalId,
+        }))}
+      />
     </div>
   );
 }

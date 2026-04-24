@@ -1,29 +1,42 @@
 "use client";
 
-import { useTransition } from "react";
+import { Trash2 } from "lucide-react";
 import { deleteDocumentAction } from "@/lib/org-actions";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 
 export function DocumentActions({
   orgSlug,
   id,
+  title,
 }: {
   orgSlug: string;
   id: string;
+  title?: string;
 }) {
-  const [pending, start] = useTransition();
   return (
-    <button
-      type="button"
-      disabled={pending}
-      onClick={() => {
-        if (!confirm("Delete this document and its vectors?")) return;
-        start(async () => {
-          await deleteDocumentAction({ orgSlug, id });
-        });
+    <ConfirmButton
+      title="Delete this document?"
+      description={
+        <>
+          {title ? (
+            <>
+              <strong>{title}</strong> and all its indexed vectors will be removed. The bot will
+              stop retrieving from it immediately.
+            </>
+          ) : (
+            "This document and all its indexed vectors will be removed."
+          )}{" "}
+          This can't be undone.
+        </>
+      }
+      confirmLabel="Delete document"
+      successToast="Document removed"
+      action={async () => {
+        const res = await deleteDocumentAction({ orgSlug, id });
+        return res;
       }}
-      className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs text-red-200 hover:bg-red-500/20 disabled:opacity-50"
     >
-      {pending ? "…" : "Delete"}
-    </button>
+      <Trash2 className="h-3.5 w-3.5" /> Delete
+    </ConfirmButton>
   );
 }

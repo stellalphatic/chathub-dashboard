@@ -23,6 +23,8 @@ const eslintConfig = [
           caughtErrorsIgnorePattern: "^_",
         },
       ],
+      // Quotes/apostrophes in JSX prose are fine — noise, not correctness.
+      "react/no-unescaped-entities": "off",
     },
   },
 ];

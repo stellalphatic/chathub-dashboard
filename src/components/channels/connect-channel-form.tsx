@@ -42,9 +42,7 @@ const COMBOS: Combo[] = [
     provider: "meta",
     label: "Instagram · Meta Graph",
     help: "Direct Meta Graph API for Instagram DMs.",
-    configFields: [
-      { key: "igUserId", label: "IG user ID", placeholder: "17841..." },
-    ],
+    configFields: [{ key: "igUserId", label: "IG user ID", placeholder: "17841..." }],
     secretFields: [
       { key: "accessToken", label: "Page access token", placeholder: "EAAG..." },
       { key: "appSecret", label: "Meta app secret", placeholder: "" },
@@ -60,9 +58,7 @@ const COMBOS: Combo[] = [
     provider: "meta",
     label: "Messenger · Meta Graph",
     help: "Direct Meta Graph API for Facebook page Messenger.",
-    configFields: [
-      { key: "pageId", label: "Facebook Page ID", placeholder: "1234567890" },
-    ],
+    configFields: [{ key: "pageId", label: "Facebook Page ID", placeholder: "1234567890" }],
     secretFields: [
       { key: "accessToken", label: "Page access token" },
       { key: "appSecret", label: "Meta app secret" },
@@ -98,14 +94,16 @@ export function ConnectChannelForm({ orgSlug }: { orgSlug: string }) {
   const [config, setConfig] = useState<Record<string, string>>({});
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
   const [pending, start] = useTransition();
 
   return (
     <form
-      className="space-y-4"
+      className="space-y-5"
       onSubmit={(e) => {
         e.preventDefault();
         setError(null);
+        setOk(false);
         start(async () => {
           const res = await connectChannelAction({
             orgSlug,
@@ -118,6 +116,7 @@ export function ConnectChannelForm({ orgSlug }: { orgSlug: string }) {
           });
           if ("error" in res) setError(res.error);
           else {
+            setOk(true);
             setLabel("");
             setExternalId("");
             setConfig({});
@@ -136,7 +135,7 @@ export function ConnectChannelForm({ orgSlug }: { orgSlug: string }) {
             setConfig({});
             setSecrets({});
           }}
-          className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white"
+          className="mt-1 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-3 py-2 text-sm text-[rgb(var(--fg))]"
         >
           {COMBOS.map((c) => (
             <option key={c.key} value={c.key}>
@@ -144,18 +143,19 @@ export function ConnectChannelForm({ orgSlug }: { orgSlug: string }) {
             </option>
           ))}
         </select>
-        <p className="mt-1 text-xs text-zinc-500">{combo.help}</p>
+        <p className="mt-1 text-xs text-[rgb(var(--fg-subtle))]">{combo.help}</p>
       </div>
 
       <div>
         <Label>Display label (optional)</Label>
-        <Input value={label} onChange={(e) => setLabel(e.target.value)} />
+        <Input className="mt-1" value={label} onChange={(e) => setLabel(e.target.value)} />
       </div>
 
       {combo.externalIdField && (
         <div>
           <Label>{combo.externalIdField.label}</Label>
           <Input
+            className="mt-1"
             value={externalId}
             placeholder={combo.externalIdField.placeholder}
             onChange={(e) => setExternalId(e.target.value)}
@@ -165,18 +165,17 @@ export function ConnectChannelForm({ orgSlug }: { orgSlug: string }) {
 
       {combo.configFields.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
             Config
           </p>
           {combo.configFields.map((f) => (
             <div key={f.key}>
               <Label>{f.label}</Label>
               <Input
+                className="mt-1"
                 value={config[f.key] ?? ""}
                 placeholder={f.placeholder}
-                onChange={(e) =>
-                  setConfig((p) => ({ ...p, [f.key]: e.target.value }))
-                }
+                onChange={(e) => setConfig((p) => ({ ...p, [f.key]: e.target.value }))}
               />
             </div>
           ))}
@@ -184,31 +183,35 @@ export function ConnectChannelForm({ orgSlug }: { orgSlug: string }) {
       )}
 
       <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        <p className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
           Secrets (encrypted)
         </p>
         {combo.secretFields.map((f) => (
           <div key={f.key}>
             <Label>{f.label}</Label>
             <Input
+              className="mt-1"
               type="password"
               value={secrets[f.key] ?? ""}
               placeholder={f.placeholder}
-              onChange={(e) =>
-                setSecrets((p) => ({ ...p, [f.key]: e.target.value }))
-              }
+              onChange={(e) => setSecrets((p) => ({ ...p, [f.key]: e.target.value }))}
             />
           </div>
         ))}
       </div>
 
       {error && (
-        <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+        <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-600 dark:text-rose-300">
           {error}
         </p>
       )}
+      {ok && !error && (
+        <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-300">
+          Connected.
+        </p>
+      )}
 
-      <Button type="submit" disabled={pending}>
+      <Button type="submit" variant="gradient" disabled={pending}>
         {pending ? "Connecting…" : "Connect channel"}
       </Button>
     </form>

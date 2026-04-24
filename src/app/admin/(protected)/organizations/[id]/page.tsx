@@ -1,12 +1,22 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
+import {
+  ArrowLeft,
+  ExternalLink,
+  IdCard,
+  Lock,
+  ShieldCheck,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import { getOrganizationAdmin } from "@/app/admin/actions";
 import { AddMemberForm } from "./add-member-form";
 import { OrgConfigLockForm } from "./org-config-lock-form";
 import { ProvisionClientForm } from "./provision-client-form";
 import { db } from "@/db";
 import { organizationMember, user as userTable } from "@/db/schema";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,6 +25,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { CopyButton } from "@/components/ui/copy-button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default async function OrganizationAdminPage({
   params,
@@ -42,88 +54,219 @@ export default async function OrganizationAdminPage({
     .where(eq(organizationMember.organizationId, org.id));
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <Link
         href="/admin"
-        className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+        className="inline-flex items-center gap-1 text-sm text-[rgb(var(--fg-muted))] transition-colors hover:text-[rgb(var(--fg))]"
       >
-        ← Businesses
+        <ArrowLeft className="h-3.5 w-3.5" /> Businesses
       </Link>
 
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold sm:text-3xl">{org.name}</h1>
-        <p className="font-mono text-sm text-emerald-400 break-all">{org.slug}</p>
-        <p className="text-xs text-zinc-500 sm:text-sm">
-          <span className="font-mono text-zinc-400">organization.id</span> for
-          n8n / Postgres:{" "}
-          <span className="break-all font-mono text-zinc-300">{org.id}</span>
-        </p>
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{org.name}</h1>
+            {clientConfigLocked ? (
+              <Badge variant="warning">Config locked</Badge>
+            ) : (
+              <Badge variant="secondary">Client-editable</Badge>
+            )}
+          </div>
+          <p className="mt-1 font-mono text-xs text-[rgb(var(--fg-subtle))] sm:text-sm">
+            {org.slug}
+          </p>
+        </div>
+        <Button asChild variant="secondary">
+          <Link href={`/app/${org.slug}`}>
+            Open dashboard <ExternalLink className="h-4 w-4" />
+          </Link>
+        </Button>
       </div>
 
+      {/* IDs / secrets strip */}
       <Card>
-        <CardHeader>
-          <CardTitle>Client config lock</CardTitle>
-          <CardDescription>
-            Require businesses to go through staff for persona and channel changes.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <OrgConfigLockForm organizationId={org.id} initiallyLocked={clientConfigLocked} />
+        <CardContent className="grid gap-3 p-4 sm:grid-cols-2">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
+              Organization ID
+            </p>
+            <div className="mt-1 flex items-center gap-2">
+              <code className="flex-1 truncate rounded-md bg-[rgb(var(--surface-2))] px-2 py-1 font-mono text-xs">
+                {org.id}
+              </code>
+              <CopyButton value={org.id} />
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
+              Ingest secret (HTTP)
+            </p>
+            <div className="mt-1 flex items-center gap-2">
+              <code className="flex-1 truncate rounded-md bg-[rgb(var(--surface-2))] px-2 py-1 font-mono text-xs">
+                {org.ingestSecret ? "•".repeat(16) + org.ingestSecret.slice(-6) : "—"}
+              </code>
+              {org.ingestSecret ? <CopyButton value={org.ingestSecret} /> : null}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Invite client login (recommended)</CardTitle>
-          <CardDescription>
-            Sends a Clerk invitation email. The user signs up via one-time code at{" "}
-            <Link href="/sign-up" className="text-emerald-400 hover:underline">
-              /sign-up
-            </Link>{" "}
-            — no shared passwords, no public registration.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ProvisionClientForm organizationId={org.id} />
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="access">
+        <TabsList>
+          <TabsTrigger value="access">
+            <UserPlus className="h-3.5 w-3.5" /> Access
+          </TabsTrigger>
+          <TabsTrigger value="members">
+            <Users className="h-3.5 w-3.5" /> Members
+          </TabsTrigger>
+          <TabsTrigger value="config">
+            <Lock className="h-3.5 w-3.5" /> Config lock
+          </TabsTrigger>
+          <TabsTrigger value="integrations">
+            <ShieldCheck className="h-3.5 w-3.5" /> Integrations
+          </TabsTrigger>
+        </TabsList>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Link existing login</CardTitle>
-          <CardDescription>
-            If the user already has an account, attach them to this business by
-            email only.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <AddMemberForm organizationId={org.id} />
-          <ul className="divide-y divide-white/10 rounded-xl border border-white/10">
-            {members.length === 0 ? (
-              <li className="p-4 text-sm text-zinc-500">No members yet.</li>
-            ) : (
-              members.map((m) => (
-                <li
-                  key={m.email}
-                  className="flex flex-col gap-2 p-4 text-sm sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium text-white">{m.name}</p>
-                    <p className="truncate text-zinc-500">{m.email}</p>
-                  </div>
-                  <span className="shrink-0 self-start rounded-full bg-white/10 px-2 py-0.5 text-xs text-zinc-300 sm:self-center">
-                    {m.role}
-                  </span>
-                </li>
-              ))
-            )}
-          </ul>
-        </CardContent>
-      </Card>
+        {/* ACCESS — invite / link */}
+        <TabsContent value="access">
+          <div className="space-y-4">
+            <Card>
+              <CardContent className="flex items-start gap-3 p-4 text-sm">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[rgb(var(--accent)/0.12)] text-[rgb(var(--accent))]">
+                  <Users className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="font-medium">Multiple users per business</p>
+                  <p className="mt-0.5 text-xs text-[rgb(var(--fg-muted))]">
+                    You can add as many people as you want — partners, employees, agents — each
+                    with their own email. Each login gets full CRM + Inbox access to{" "}
+                    <strong>{org.name}</strong>. Invite once below; repeat for every address.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Invite new client login</CardTitle>
+                  <CardDescription>
+                    Sends a Clerk invitation email. The user verifies with a one-time code at{" "}
+                    <Link
+                      href="/sign-up"
+                      className="text-[rgb(var(--accent))] hover:underline"
+                    >
+                      /sign-up
+                    </Link>{" "}
+                    and is auto-attached to this business.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ProvisionClientForm organizationId={org.id} />
+                </CardContent>
+              </Card>
 
-      <Button variant="outline" asChild className="w-full sm:w-auto">
-        <Link href={`/app/${org.slug}`}>Preview client dashboard</Link>
-      </Button>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Link existing account</CardTitle>
+                  <CardDescription>
+                    If the person already has a ChatHub login, just attach them by email.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <AddMemberForm organizationId={org.id} />
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* MEMBERS list */}
+        <TabsContent value="members">
+          <Card>
+            <CardHeader>
+              <CardTitle>Members ({members.length})</CardTitle>
+              <CardDescription>Everyone with access to this business.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {members.length === 0 ? (
+                <p className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-4 text-sm text-[rgb(var(--fg-muted))]">
+                  No members yet — invite someone from the Access tab.
+                </p>
+              ) : (
+                <ul className="divide-y divide-[rgb(var(--border))] rounded-xl border border-[rgb(var(--border))]">
+                  {members.map((m) => (
+                    <li
+                      key={m.email}
+                      className="flex flex-col gap-2 p-4 text-sm sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0 flex items-center gap-3">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[rgb(var(--surface-2))] text-[rgb(var(--fg-muted))]">
+                          <IdCard className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-medium text-[rgb(var(--fg))]">{m.name}</p>
+                          <p className="truncate text-[rgb(var(--fg-muted))]">{m.email}</p>
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="shrink-0 self-start sm:self-center">
+                        {m.role}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* CONFIG LOCK */}
+        <TabsContent value="config">
+          <Card>
+            <CardHeader>
+              <CardTitle>Client configuration lock</CardTitle>
+              <CardDescription>
+                When locked, the business sees a read-only bot config. Only platform staff can
+                change persona, FAQs, system prompt, and channel integrations.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <OrgConfigLockForm
+                organizationId={org.id}
+                initiallyLocked={clientConfigLocked}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* INTEGRATIONS (status / shortcuts) */}
+        <TabsContent value="integrations">
+          <Card>
+            <CardHeader>
+              <CardTitle>Integrations</CardTitle>
+              <CardDescription>
+                Channel and model integrations live on the client dashboard. Use these shortcuts
+                to jump straight in (staff can edit even when the config is locked).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-2 sm:grid-cols-2">
+              {[
+                { href: `/app/${org.slug}/channels`, label: "Channels (YCloud / Meta / ManyChat)" },
+                { href: `/app/${org.slug}/bot`, label: "Bot config (persona, style, prompt)" },
+                { href: `/app/${org.slug}/knowledge`, label: "Knowledge base (RAG docs)" },
+                { href: `/app/${org.slug}/templates`, label: "Message templates" },
+                { href: `/app/${org.slug}/broadcasts`, label: "Broadcasts & scheduling" },
+              ].map((l) => (
+                <Button key={l.href} asChild variant="secondary" className="justify-between">
+                  <Link href={l.href}>
+                    {l.label} <ExternalLink className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

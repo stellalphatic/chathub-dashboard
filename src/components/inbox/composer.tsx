@@ -1,9 +1,14 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Send } from "lucide-react";
+import { toast } from "sonner";
 import { sendMessageAction } from "@/lib/org-actions";
 import { decideSend } from "@/lib/window-24h";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 type Template = {
   id: string;
@@ -30,7 +35,6 @@ export function Composer({
   const [mode, setMode] = useState<"freeform" | "template">("freeform");
   const [templateId, setTemplateId] = useState<string>("");
   const [variables, setVariables] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   const decision = useMemo(
@@ -39,18 +43,14 @@ export function Composer({
   );
   const mustUseTemplate = decision.kind === "template_required";
   const selectedTemplate = templates.find((t) => t.id === templateId);
-
-  // Auto-flip to template mode when the window has closed.
   const effectiveMode = mustUseTemplate ? "template" : mode;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-
     start(async () => {
       if (effectiveMode === "template") {
         if (!templateId) {
-          setError("Pick an approved template.");
+          toast.error("Pick an approved template first.");
           return;
         }
         const res = await sendMessageAction({
@@ -60,14 +60,15 @@ export function Composer({
           templateVariables: variables,
         });
         if ("error" in res) {
-          setError(res.error);
+          toast.error(res.error);
           return;
         }
+        toast.success("Template sent.");
         setTemplateId("");
         setVariables({});
       } else {
         if (!body.trim()) {
-          setError("Message can't be empty.");
+          toast.error("Message can't be empty.");
           return;
         }
         const res = await sendMessageAction({
@@ -76,7 +77,7 @@ export function Composer({
           body: body.trim(),
         });
         if ("error" in res) {
-          setError(res.error);
+          toast.error(res.error);
           return;
         }
         setBody("");
@@ -87,24 +88,25 @@ export function Composer({
   return (
     <form
       onSubmit={onSubmit}
-      className="border-t border-white/10 bg-zinc-950/40 px-3 py-3 space-y-2"
+      className="space-y-2 border-t border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-3 py-3"
     >
       {mustUseTemplate && (
-        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-          The 24-hour customer service window is closed. You must send an
-          approved template; freeform is not allowed.
+        <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+          The 24-hour customer-service window is closed — freeform is disabled by Meta policy.
+          Send an approved template instead.
         </p>
       )}
-      <div className="flex items-center gap-2 text-xs">
+
+      <div className="flex items-center gap-1.5 text-xs">
         <button
           type="button"
           disabled={mustUseTemplate}
           onClick={() => setMode("freeform")}
           className={cn(
-            "rounded-full px-3 py-1",
+            "rounded-full border px-3 py-1 transition-colors",
             effectiveMode === "freeform"
-              ? "bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-500/30"
-              : "bg-white/5 text-zinc-400",
+              ? "border-[rgb(var(--accent))] bg-[rgb(var(--accent)/0.15)] text-[rgb(var(--accent))]"
+              : "border-[rgb(var(--border))] bg-[rgb(var(--surface))] text-[rgb(var(--fg-muted))]",
             mustUseTemplate && "cursor-not-allowed opacity-50",
           )}
         >
@@ -114,10 +116,10 @@ export function Composer({
           type="button"
           onClick={() => setMode("template")}
           className={cn(
-            "rounded-full px-3 py-1",
+            "rounded-full border px-3 py-1 transition-colors",
             effectiveMode === "template"
-              ? "bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-500/30"
-              : "bg-white/5 text-zinc-400",
+              ? "border-[rgb(var(--accent))] bg-[rgb(var(--accent)/0.15)] text-[rgb(var(--accent))]"
+              : "border-[rgb(var(--border))] bg-[rgb(var(--surface))] text-[rgb(var(--fg-muted))]",
           )}
         >
           Template
@@ -132,7 +134,7 @@ export function Composer({
               setTemplateId(e.target.value);
               setVariables({});
             }}
-            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white"
+            className="w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-3 py-2 text-sm"
           >
             <option value="">Pick an approved template…</option>
             {templates.map((t) => (
@@ -143,20 +145,19 @@ export function Composer({
           </select>
           {selectedTemplate && (
             <>
-              <p className="whitespace-pre-wrap rounded-lg border border-white/10 bg-zinc-900/50 px-3 py-2 text-xs text-zinc-300">
+              <p className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-3 py-2 font-mono text-xs text-[rgb(var(--fg))]">
                 {selectedTemplate.bodyPreview}
               </p>
               {(selectedTemplate.variables ?? []).length > 0 && (
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {(selectedTemplate.variables ?? []).map((v) => (
-                    <input
+                    <Input
                       key={v}
                       value={variables[v] ?? ""}
                       onChange={(e) =>
                         setVariables((prev) => ({ ...prev, [v]: e.target.value }))
                       }
                       placeholder={`{{${v}}}`}
-                      className="rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm"
                     />
                   ))}
                 </div>
@@ -165,29 +166,27 @@ export function Composer({
           )}
         </div>
       ) : (
-        <textarea
+        <Textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
           placeholder="Type a message…"
           rows={2}
-          className="w-full resize-none rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              (e.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
+            }
+          }}
         />
       )}
 
-      {error && (
-        <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-          {error}
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] text-[rgb(var(--fg-subtle))]">
+          Enter for newline · Cmd/Ctrl+Enter to send
         </p>
-      )}
-
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="submit"
-          disabled={pending}
-          className="min-h-9 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
-        >
-          {pending ? "Sending…" : "Send"}
-        </button>
+        <Button type="submit" disabled={pending} variant="gradient" size="sm">
+          {pending ? "Sending…" : (<><Send className="h-3.5 w-3.5" /> Send</>)}
+        </Button>
       </div>
     </form>
   );

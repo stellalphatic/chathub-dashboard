@@ -4,23 +4,47 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  [
+    "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium",
+    "transition-all duration-200 ease-out",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+    "focus-visible:ring-[rgb(var(--ring))] focus-visible:ring-offset-[rgb(var(--bg))]",
+    "disabled:pointer-events-none disabled:opacity-50",
+    "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+    "active:scale-[0.98]",
+  ].join(" "),
   {
     variants: {
       variant: {
-        default:
-          "bg-emerald-600 text-white shadow-lg shadow-emerald-900/20 hover:bg-emerald-500",
-        secondary:
-          "bg-white/10 text-white border border-white/10 hover:bg-white/15",
-        ghost: "hover:bg-white/10",
-        outline:
-          "border border-white/15 bg-transparent hover:bg-white/5 text-white",
-        destructive: "bg-red-600 text-white hover:bg-red-500",
+        default: [
+          "bg-[rgb(var(--accent))] text-[rgb(var(--accent-fg))]",
+          "shadow-md shadow-[rgb(var(--accent)/0.25)]",
+          "hover:shadow-lg hover:shadow-[rgb(var(--accent)/0.35)] hover:-translate-y-px",
+        ].join(" "),
+        gradient: [
+          "gradient-brand text-white shadow-lg shadow-emerald-900/30",
+          "hover:brightness-110 hover:-translate-y-px",
+        ].join(" "),
+        secondary: [
+          "bg-[rgb(var(--surface-2))] text-[rgb(var(--fg))]",
+          "border border-[rgb(var(--border))]",
+          "hover:border-[rgb(var(--border-strong))] hover:bg-[rgb(var(--surface))]",
+        ].join(" "),
+        ghost:
+          "hover:bg-[rgb(var(--surface-2))] text-[rgb(var(--fg-muted))] hover:text-[rgb(var(--fg))]",
+        outline: [
+          "border border-[rgb(var(--border-strong))] bg-transparent text-[rgb(var(--fg))]",
+          "hover:bg-[rgb(var(--surface-2))]",
+        ].join(" "),
+        destructive:
+          "bg-[rgb(var(--danger))] text-white hover:brightness-110 hover:-translate-y-px",
+        link: "text-[rgb(var(--accent))] underline-offset-4 hover:underline",
       },
       size: {
         default: "h-10 px-4 py-2",
-        sm: "h-9 rounded-lg px-3",
-        lg: "h-11 rounded-xl px-6",
+        sm: "h-9 rounded-lg px-3 text-xs",
+        lg: "h-12 rounded-xl px-6 text-base",
+        xl: "h-14 rounded-2xl px-8 text-base",
         icon: "h-10 w-10",
       },
     },

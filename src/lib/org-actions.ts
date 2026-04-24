@@ -163,6 +163,98 @@ export async function setConversationModeAction(input: {
   return { ok: true };
 }
 
+/** Reset the per-conversation unread counter after the agent opens the thread. */
+export async function markConversationReadAction(input: {
+  orgSlug: string;
+  conversationId: string;
+}): Promise<{ ok: true } | { error: string }> {
+  const { org } = await requireAccess(input.orgSlug);
+  await db
+    .update(conversation)
+    .set({ unreadCount: 0, updatedAt: new Date() })
+    .where(
+      and(
+        eq(conversation.id, input.conversationId),
+        eq(conversation.organizationId, org.id),
+      ),
+    );
+  return { ok: true };
+}
+
+/** Change conversation status (open / snoozed / closed). */
+export async function setConversationStatusAction(input: {
+  orgSlug: string;
+  conversationId: string;
+  status: "open" | "snoozed" | "closed";
+}): Promise<{ ok: true } | { error: string }> {
+  const { org } = await requireAccess(input.orgSlug);
+  await db
+    .update(conversation)
+    .set({ status: input.status, updatedAt: new Date() })
+    .where(
+      and(
+        eq(conversation.id, input.conversationId),
+        eq(conversation.organizationId, org.id),
+      ),
+    );
+  revalidatePath(`/app/${input.orgSlug}/inbox`);
+  return { ok: true };
+}
+
+/**
+ * Wipe all messages on a conversation so the agent can reset the bot's
+ * memory for this customer. The conversation row stays (phone, channel,
+ * mode) so future messages still route here; only history is deleted.
+ */
+export async function clearConversationHistoryAction(input: {
+  orgSlug: string;
+  conversationId: string;
+}): Promise<{ ok: true } | { error: string }> {
+  const { org } = await requireAccess(input.orgSlug);
+  const [conv] = await db
+    .select({ id: conversation.id })
+    .from(conversation)
+    .where(
+      and(
+        eq(conversation.id, input.conversationId),
+        eq(conversation.organizationId, org.id),
+      ),
+    )
+    .limit(1);
+  if (!conv) return { error: "Conversation not found." };
+  await db.delete(message).where(eq(message.conversationId, conv.id));
+  await db
+    .update(conversation)
+    .set({
+      lastMessagePreview: null,
+      lastMessageAt: null,
+      lastInboundAt: null,
+      unreadCount: 0,
+      updatedAt: new Date(),
+    })
+    .where(eq(conversation.id, conv.id));
+  revalidatePath(`/app/${input.orgSlug}/inbox`);
+  return { ok: true };
+}
+
+/** Remove the entire conversation (and its messages). */
+export async function deleteConversationAction(input: {
+  orgSlug: string;
+  conversationId: string;
+}): Promise<{ ok: true } | { error: string }> {
+  const { org } = await requireAccess(input.orgSlug);
+  await db
+    .delete(conversation)
+    .where(
+      and(
+        eq(conversation.id, input.conversationId),
+        eq(conversation.organizationId, org.id),
+      ),
+    );
+  revalidatePath(`/app/${input.orgSlug}/inbox`);
+  return { ok: true };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Channel connections
 // ─────────────────────────────────────────────────────────────────────────────

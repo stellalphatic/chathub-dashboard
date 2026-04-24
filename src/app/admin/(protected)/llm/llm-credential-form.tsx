@@ -1,14 +1,19 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { CheckCircle2, Trash2, Zap } from "lucide-react";
+import { toast } from "sonner";
 import {
   deleteLlmCredentialAction,
+  testLlmCredentialAction,
   toggleLlmCredentialAction,
   upsertLlmCredentialAction,
 } from "@/app/admin/actions-llm";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
 export function LlmCredentialForm({
   provider,
@@ -21,17 +26,21 @@ export function LlmCredentialForm({
   const [defaultModel, setDefaultModel] = useState(initial.defaultModel);
   const [priority, setPriority] = useState(initial.priority);
   const [enabled, setEnabled] = useState(initial.enabled);
-  const [err, setErr] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
   const [pending, start] = useTransition();
+  const [testing, startTest] = useTransition();
+  const [testResult, setTestResult] = useState<null | {
+    ok: true;
+    latencyMs: number;
+    tokens: number;
+    snippet: string;
+    model: string;
+  }>(null);
 
   return (
     <form
-      className="space-y-3"
+      className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
-        setErr(null);
-        setOk(false);
         start(async () => {
           const res = await upsertLlmCredentialAction({
             provider,
@@ -40,93 +49,115 @@ export function LlmCredentialForm({
             apiKey,
             priority,
           });
-          if ("error" in res) setErr(res.error);
-          else {
-            setOk(true);
+          if ("error" in res) {
+            toast.error(res.error);
+          } else {
+            toast.success("Provider saved.");
             setApiKey("");
           }
         });
       }}
     >
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <Switch
+        checked={enabled}
+        onCheckedChange={(v) => {
+          setEnabled(v);
+          start(async () => {
+            const res = await toggleLlmCredentialAction({ provider, enabled: v });
+            if (res && "error" in res && res.error) toast.error(res.error);
+          });
+        }}
+        label={enabled ? "Enabled — in router cascade" : "Disabled"}
+        description="Turn off to skip this provider without deleting the key."
+      />
+
+      <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <Label>Default model</Label>
           <Input
+            className="mt-1 font-mono text-xs"
             value={defaultModel}
             onChange={(e) => setDefaultModel(e.target.value)}
           />
         </div>
         <div>
-          <Label>Priority (lower = earlier)</Label>
+          <Label>Priority (lower = tried first)</Label>
           <Input
+            className="mt-1"
             type="number"
+            min={1}
+            max={1000}
             value={priority}
             onChange={(e) => setPriority(Number(e.target.value))}
           />
         </div>
-        <div>
-          <Label>Enabled</Label>
-          <label className="mt-3 block text-sm">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-              className="mr-2"
-            />
-            {enabled ? "yes" : "no"}
-          </label>
-        </div>
       </div>
+
       <div>
         <Label>API key (write-only)</Label>
         <Input
+          className="mt-1"
           type="password"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          placeholder="paste key; it will be encrypted"
+          placeholder="Paste key — encrypted with ENCRYPTION_KEY before storage"
         />
+        <p className="mt-1 text-xs text-[rgb(var(--fg-subtle))]">
+          The key is never read back from the DB. Re-enter to rotate.
+        </p>
       </div>
-      {err && (
-        <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-          {err}
-        </p>
-      )}
-      {ok && (
-        <p className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-          Saved.
-        </p>
-      )}
+
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={pending}>
-          {pending ? "Saving…" : "Save"}
+        <Button type="submit" variant="gradient" disabled={pending}>
+          {pending ? "Saving…" : "Save provider"}
         </Button>
-        <button
+        <Button
           type="button"
-          disabled={pending}
+          variant="secondary"
+          disabled={testing}
           onClick={() => {
-            start(async () => {
-              await toggleLlmCredentialAction({ provider, enabled: !enabled });
-              setEnabled(!enabled);
+            setTestResult(null);
+            startTest(async () => {
+              const res = await testLlmCredentialAction({ provider });
+              if ("error" in res) {
+                toast.error(res.error);
+              } else {
+                setTestResult(res);
+                toast.success(`${provider} reachable in ${res.latencyMs}ms`);
+              }
             });
           }}
-          className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-300 hover:bg-white/10"
         >
-          {enabled ? "Disable" : "Enable"}
-        </button>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => {
-            if (!confirm("Delete credential?")) return;
-            start(async () => {
-              await deleteLlmCredentialAction({ provider });
-            });
+          {testing ? <>Testing…</> : <><Zap className="h-3.5 w-3.5" /> Test call</>}
+        </Button>
+        <ConfirmButton
+          title="Delete credential?"
+          description={`This removes ${provider}'s key from the router. Messages will fall through to the next provider.`}
+          confirmLabel="Delete key"
+          successToast="Credential removed."
+          action={async () => {
+            const res = await deleteLlmCredentialAction({ provider });
+            return res;
           }}
-          className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200 hover:bg-red-500/20"
         >
-          Delete
-        </button>
+          <Trash2 className="h-3.5 w-3.5" /> Delete
+        </ConfirmButton>
       </div>
+
+      {testResult ? (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs">
+          <div className="flex items-center gap-2 font-medium text-emerald-700 dark:text-emerald-300">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Test successful · {testResult.latencyMs}ms · {testResult.tokens} tokens · model{" "}
+            <code>{testResult.model}</code>
+          </div>
+          {testResult.snippet ? (
+            <p className="mt-1 text-[rgb(var(--fg-muted))]">
+              Sample reply: <span className="text-[rgb(var(--fg))]">{testResult.snippet}</span>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </form>
   );
 }

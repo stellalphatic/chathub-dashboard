@@ -25,6 +25,7 @@ export async function getServerSession(): Promise<null | {
     email,
     name,
     publicMetadata: u.publicMetadata as Record<string, unknown> | undefined,
+    privateMetadata: u.privateMetadata as Record<string, unknown> | undefined,
   });
 
   return { user: { id: userId, email, name } };

@@ -12,26 +12,62 @@ function adminEmailsFromEnv(): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Clerk can flag a user as platform admin via either `publicMetadata.platformAdmin = true`
+ * or `privateMetadata.platformAdmin = true`. This lets you grant admin access from
+ * the Clerk dashboard without redeploying / editing env vars.
+ */
+function hasAdminMetadata(
+  pub: Record<string, unknown> | undefined,
+  priv: Record<string, unknown> | undefined,
+): boolean {
+  const p1 = pub?.platformAdmin;
+  const p2 = priv?.platformAdmin;
+  if (p1 === true) return true;
+  if (p2 === true) return true;
+  if (typeof p1 === "string" && p1.toLowerCase() === "true") return true;
+  if (typeof p2 === "string" && p2.toLowerCase() === "true") return true;
+  // Optional role-based flag: "admin", "staff", "platform_admin"
+  const role = (pub?.role ?? priv?.role) as unknown;
+  if (typeof role === "string") {
+    const v = role.toLowerCase();
+    if (v === "admin" || v === "staff" || v === "platform_admin") return true;
+  }
+  return false;
+}
+
 type EnsureAppUserInput = {
   userId: string;
   email: string;
   name: string;
   publicMetadata: Record<string, unknown> | undefined;
+  privateMetadata?: Record<string, unknown> | undefined;
 };
 
 /**
  * JIT sync between Clerk identity and our local `user` row.
  *
- * - Creates the row on first sign-in (id = Clerk userId).
- * - Auto-flags `platformAdmin` if email is in CHATHUB_PLATFORM_ADMIN_EMAILS.
- * - Attaches user to an org if the invitation carried `publicMetadata.pendingOrgId`
- *   (then clears that metadata so we don't re-run the link on every request).
+ * Idempotent; called on every authenticated request.
  *
- * Safe to call on every authenticated request; it's idempotent and quick.
+ * Promotion to `platformAdmin` happens if ANY of these match:
+ *   1. Email is in `CHATHUB_PLATFORM_ADMIN_EMAILS` env.
+ *   2. Clerk user has `publicMetadata.platformAdmin = true` or `privateMetadata.platformAdmin = true`.
+ *   3. Clerk user has `publicMetadata.role = "admin" | "staff" | "platform_admin"`.
+ *
+ * If the invitation email carried `publicMetadata.pendingOrgId`, the user is added
+ * to that organization as a member on first sign-in (metadata is cleared after).
  */
 export async function ensureAppUser(input: EnsureAppUserInput): Promise<void> {
   const emailLower = (input.email ?? "").trim().toLowerCase();
-  const shouldBeAdmin = emailLower.length > 0 && adminEmailsFromEnv().includes(emailLower);
+
+  const shouldBeAdminByEnv =
+    emailLower.length > 0 && adminEmailsFromEnv().includes(emailLower);
+  const shouldBeAdminByMeta = hasAdminMetadata(
+    input.publicMetadata,
+    input.privateMetadata,
+  );
+  const shouldBeAdmin = shouldBeAdminByEnv || shouldBeAdminByMeta;
+
   const fallbackEmail = emailLower || `${input.userId}@placeholder.invalid`;
 
   const [existing] = await db
@@ -55,8 +91,7 @@ export async function ensureAppUser(input: EnsureAppUserInput): Promise<void> {
         platformAdmin: shouldBeAdmin,
       });
     } catch (e) {
-      // Email unique collision: another row exists with same email but different id.
-      // Don't block sign-in; just warn. Admin must reconcile manually.
+      // Another row with the same email already exists (edge case: same email across Clerk users).
       if ((e as { code?: string }).code !== "23505") throw e;
       console.warn(
         `[ensureAppUser] email ${emailLower} already bound to a different user id — skipping insert`,
@@ -81,19 +116,24 @@ export async function ensureAppUser(input: EnsureAppUserInput): Promise<void> {
     }
   }
 
-  // Invitation → org membership (single-use; cleared after success).
+  // ── Invitation flow: attach to org if metadata carries pendingOrgId(s) ──
+  // Supports either a single string or an array (for multi-org invites).
   const meta = input.publicMetadata ?? {};
-  const pendingOrgId =
-    typeof (meta as Record<string, unknown>).pendingOrgId === "string"
-      ? ((meta as Record<string, unknown>).pendingOrgId as string)
-      : null;
-  if (pendingOrgId) {
-    const [org] = await db
-      .select({ id: organization.id })
-      .from(organization)
-      .where(eq(organization.id, pendingOrgId))
-      .limit(1);
-    if (org) {
+  const rawOrgIds = (meta as Record<string, unknown>).pendingOrgId;
+  const pendingOrgIds: string[] = Array.isArray(rawOrgIds)
+    ? rawOrgIds.filter((x): x is string => typeof x === "string")
+    : typeof rawOrgIds === "string"
+      ? [rawOrgIds]
+      : [];
+
+  if (pendingOrgIds.length > 0) {
+    for (const orgId of pendingOrgIds) {
+      const [org] = await db
+        .select({ id: organization.id })
+        .from(organization)
+        .where(eq(organization.id, orgId))
+        .limit(1);
+      if (!org) continue;
       try {
         await db.insert(organizationMember).values({
           id: randomUUID(),
@@ -108,6 +148,7 @@ export async function ensureAppUser(input: EnsureAppUserInput): Promise<void> {
         }
       }
     }
+    // Clear pending metadata so we don't re-run on every request
     try {
       const client = await clerkClient();
       const next = { ...(meta as Record<string, unknown>) };

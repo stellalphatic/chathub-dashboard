@@ -7,6 +7,70 @@ import { db } from "@/db";
 import { customer } from "@/db/schema";
 import { getOrgAccess } from "@/lib/org-access";
 
+/** Quick status-only update for kanban moves and list dropdowns. */
+export async function setCustomerStatusAction(input: {
+  orgSlug: string;
+  customerId: string;
+  status: "new" | "active" | "follow_up" | "converted" | "dnd";
+}): Promise<{ ok: true } | { error: string }> {
+  const access = await getOrgAccess(input.orgSlug);
+  if (!access) return { error: "Unauthorized." };
+
+  const [row] = await db
+    .select({ id: customer.id })
+    .from(customer)
+    .where(
+      and(
+        eq(customer.id, input.customerId),
+        eq(customer.organizationId, access.org.id),
+      ),
+    )
+    .limit(1);
+  if (!row) return { error: "Customer not found." };
+
+  await db
+    .update(customer)
+    .set({ status: input.status, updatedAt: new Date() })
+    .where(eq(customer.id, input.customerId));
+
+  revalidatePath(`/app/${input.orgSlug}/crm`);
+  revalidatePath(`/app/${input.orgSlug}/crm/${input.customerId}`);
+  return { ok: true };
+}
+
+/** Update tags + meeting fields in one call (used by detail page). */
+export async function setCustomerFlagsAction(input: {
+  orgSlug: string;
+  customerId: string;
+  tags?: string[];
+  meetingBooked?: boolean;
+  meetingTime?: string | null;
+}): Promise<{ ok: true } | { error: string }> {
+  const access = await getOrgAccess(input.orgSlug);
+  if (!access) return { error: "Unauthorized." };
+
+  const setObj: Record<string, unknown> = { updatedAt: new Date() };
+  if (input.tags !== undefined) setObj.tags = input.tags;
+  if (input.meetingBooked !== undefined) setObj.meetingBooked = input.meetingBooked;
+  if (input.meetingTime !== undefined) {
+    setObj.meetingTime = input.meetingTime?.trim() || null;
+  }
+
+  await db
+    .update(customer)
+    .set(setObj)
+    .where(
+      and(
+        eq(customer.id, input.customerId),
+        eq(customer.organizationId, access.org.id),
+      ),
+    );
+
+  revalidatePath(`/app/${input.orgSlug}/crm`);
+  revalidatePath(`/app/${input.orgSlug}/crm/${input.customerId}`);
+  return { ok: true };
+}
+
 const e164ish = /^\+[1-9]\d{6,14}$/;
 
 const updateSchema = z.object({
