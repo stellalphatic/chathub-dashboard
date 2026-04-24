@@ -57,41 +57,39 @@ export async function enqueue<T>(
   return (q as unknown as Queue).add(name, payload, opts);
 }
 
-/** Repeatable ticker: scheduled message scanner runs every minute.
+/**
+ * Cleanup helper called on worker startup.
  *
- * We use `every: 60_000` (interval in ms) instead of a cron `pattern`.
- * BullMQ 5.x had a serialization bug with cron-pattern repeats where the
- * next-run Date object reached Redis as-is, throwing
- * "Received an instance of Date". Interval-based repeats take a different
- * code path and are not affected.
+ * We used to register a BullMQ repeatable here to run the scheduled-ticker
+ * every minute, but BullMQ 5.x has a Redis-serialization bug with both
+ * cron-pattern AND interval repeats in certain combinations: the
+ * next-run Date gets handed to Buffer.from somewhere internally and throws
+ * "Received an instance of Date". Since our ticker has no state it must
+ * persist between invocations, we switched to a plain `setInterval` in the
+ * worker process (`workers/index.ts`). This function now only cleans up any
+ * leftover repeatable entries from previous deploys so Redis doesn't keep
+ * firing broken jobs.
  */
-export async function ensureRepeatables() {
+export async function cleanupLegacyTickerRepeatables() {
   const ticker = getQueue(QUEUES.scheduledTicker);
-
-  // Clean up any old cron-pattern-based repeat from previous deploys so we
-  // don't accumulate stale, broken repeatables in Redis.
   try {
     const existing = await ticker.getRepeatableJobs();
     for (const r of existing) {
-      if (r.name === "tick") {
+      try {
         await ticker.removeRepeatableByKey(r.key);
+      } catch {
+        /* ignore — key may already be gone */
       }
     }
+    // Also drain the waiting/delayed queues of any accumulated "tick" jobs.
+    await ticker.drain(true);
   } catch {
-    // First-run Redis may not have anything to clean — safe to ignore.
+    /* first-run Redis may have nothing to clean */
   }
-
-  await ticker.add(
-    "tick",
-    { ts: Date.now() },
-    {
-      repeat: { every: 60_000 },
-      jobId: "scheduled-ticker-repeat",
-      removeOnComplete: true,
-      removeOnFail: { count: 50 },
-    },
-  );
 }
+
+/** @deprecated Retained so older code paths don't crash; prefer cleanupLegacyTickerRepeatables. */
+export const ensureRepeatables = cleanupLegacyTickerRepeatables;
 
 let _events: QueueEvents | null = null;
 export function getInboundEvents() {

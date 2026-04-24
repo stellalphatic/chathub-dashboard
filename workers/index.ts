@@ -10,7 +10,7 @@
 
 import { Worker } from "bullmq";
 import { buildBullConnection } from "../src/lib/redis";
-import { ensureRepeatables, QUEUES } from "../src/lib/queue";
+import { cleanupLegacyTickerRepeatables, QUEUES } from "../src/lib/queue";
 import { handleInboundMessage } from "./handlers/inbound-message";
 import { handleOutboundSend } from "./handlers/outbound-send";
 import { handleLlmReply } from "./handlers/llm-reply";
@@ -42,10 +42,10 @@ async function main() {
       connection: buildBullConnection(),
       concurrency: 2,
     }),
-    new Worker(QUEUES.scheduledTicker, handleScheduledTicker, {
-      connection: buildBullConnection(),
-      concurrency: 1,
-    }),
+    // NOTE: we deliberately do NOT register a BullMQ Worker for
+    // QUEUES.scheduledTicker — see the setInterval loop below. BullMQ
+    // repeatables were hitting a "Received an instance of Date"
+    // serialization bug in 5.x, so we bypass Redis entirely for this tick.
     new Worker(QUEUES.broadcastRunner, handleBroadcastRunner, {
       connection: buildBullConnection(),
       concurrency: 2,
@@ -71,11 +71,29 @@ async function main() {
     });
   }
 
-  await ensureRepeatables();
-  console.log("[worker] repeatables ensured; waiting for jobs…");
+  // One-time cleanup of any broken BullMQ repeatables from past deploys.
+  await cleanupLegacyTickerRepeatables();
+
+  // In-process minute tick — uses the same handler as the old BullMQ
+  // repeatable, but driven by setInterval. Two worker replicas will each
+  // tick; `FOR UPDATE SKIP LOCKED` in the SQL ensures we never double-send.
+  const TICK_EVERY_MS = 60_000;
+  const tick = async () => {
+    try {
+      await handleScheduledTicker();
+    } catch (e) {
+      console.error("[scheduled-ticker] in-process tick failed:", e);
+    }
+  };
+  const tickerHandle = setInterval(tick, TICK_EVERY_MS);
+  // Run one immediately on boot so late-scheduled messages don't wait a full minute.
+  void tick();
+
+  console.log("[worker] ready; scheduled-ticker running every 60s in-process");
 
   const shutdown = async (sig: string) => {
     console.log(`[worker] ${sig} — shutting down`);
+    clearInterval(tickerHandle);
     await Promise.all(workers.map((w) => w.close()));
     process.exit(0);
   };
