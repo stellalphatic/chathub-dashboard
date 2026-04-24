@@ -17,7 +17,23 @@ import {
   Users,
   Zap,
 } from "lucide-react";
-import { getAdminPlatformStats, type OrgStatRow } from "@/app/admin/stats";
+import { getAdminPlatformStats, type AdminPlatformStats, type OrgStatRow } from "@/app/admin/stats";
+
+async function safeGetAdminPlatformStats(): Promise<
+  | { ok: true; data: AdminPlatformStats }
+  | { ok: false; error: string }
+> {
+  try {
+    const data = await getAdminPlatformStats();
+    return { ok: true, data };
+  } catch (e) {
+    console.error("[admin/overview] stats failed:", e);
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Unknown error",
+    };
+  }
+}
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -56,7 +72,41 @@ function compact(n: number): string {
 }
 
 export default async function AdminHomePage() {
-  const stats = await getAdminPlatformStats();
+  const res = await safeGetAdminPlatformStats();
+  if (!res.ok) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              Platform overview
+            </h1>
+            <p className="mt-1 text-sm text-[rgb(var(--fg-muted))] sm:text-base">
+              Analytics are temporarily unavailable.
+            </p>
+          </div>
+          <Button asChild variant="gradient">
+            <Link href="/admin/organizations/new">
+              <Plus className="h-4 w-4" /> New business
+            </Link>
+          </Button>
+        </div>
+        <Card>
+          <CardContent className="space-y-2 p-6">
+            <p className="text-sm font-medium text-rose-500">Failed to load stats</p>
+            <p className="font-mono text-xs text-[rgb(var(--fg-muted))]">
+              {res.error}
+            </p>
+            <p className="text-xs text-[rgb(var(--fg-subtle))]">
+              This admin page keeps working even when analytics fail. Check the worker logs
+              or Supabase status and refresh.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  const stats = res.data;
 
   const msgTrend = trendPct(stats.messages24h, stats.messagesPrev24h);
 

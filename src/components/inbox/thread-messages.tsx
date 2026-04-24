@@ -125,7 +125,7 @@ export function ThreadMessages({
   return (
     <div
       ref={scroller}
-      className="flex-1 min-h-0 space-y-2 overflow-y-auto px-3 py-4"
+      className="scrollbar-thin flex-1 min-h-0 space-y-2 overflow-y-auto px-3 py-4"
       style={{
         backgroundImage:
           "radial-gradient(circle at 20% 20%, rgb(var(--accent)/0.08), transparent 40%), radial-gradient(circle at 80% 0%, rgba(59,130,246,0.06), transparent 35%)",

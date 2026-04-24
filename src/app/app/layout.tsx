@@ -37,17 +37,21 @@ export default async function AppShellLayout({
         .orderBy(asc(organization.name));
 
   return (
-    <div className="min-h-screen bg-[rgb(var(--bg-muted))]">
+    <div
+      className="min-h-screen bg-[rgb(var(--bg-muted))]"
+      // Fallback for first paint before the client-side sidebar hydrates.
+      style={{ ["--sidebar-w" as string]: "4.75rem" }}
+    >
       <AppSidebar
         orgs={orgs}
         currentSlug={orgs[0]?.slug ?? ""}
         userEmail={session.user.email}
         platformAdmin={isAdmin}
       />
-      <div className="md:pl-64">
+      <div className="md:pl-[var(--sidebar-w)] transition-[padding-left] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]">
         <AppTopbar />
-        <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6 lg:p-8">
-          {children}
+        <main className="min-h-[calc(100dvh-4rem)] px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full max-w-7xl">{children}</div>
         </main>
       </div>
     </div>

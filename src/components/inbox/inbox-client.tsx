@@ -218,7 +218,7 @@ export function InboxSidebar({
       </div>
 
       {/* List */}
-      <ul className="flex-1 min-h-0 divide-y divide-[rgb(var(--border))] overflow-y-auto">
+      <ul className="scrollbar-thin flex-1 min-h-0 divide-y divide-[rgb(var(--border))] overflow-y-auto">
         {filtered.length === 0 ? (
           <li className="p-6 text-center text-sm text-[rgb(var(--fg-subtle))]">
             {conversations.length === 0 ? (

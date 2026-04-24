@@ -175,14 +175,43 @@ body {
 
 @keyframes float-blob {
   0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(30px, -30px) scale(1.05); }
-  66% { transform: translate(-20px, 15px) scale(0.97); }
+  33% { transform: translate(14px, -14px) scale(1.03); }
+  66% { transform: translate(-10px, 8px) scale(0.98); }
+}
+
+@keyframes brand-dot-pulse {
+  0%, 100% { transform: translateY(0); opacity: 1; }
+  50% { transform: translateY(-0.6px); opacity: 0.88; }
 }
 
 .animate-fade-up { animation: fade-up 0.45s cubic-bezier(0.2, 0.8, 0.25, 1) both; }
 .animate-fade-in { animation: fade-in 0.5s ease both; }
 .animate-scale-in { animation: scale-in 0.35s cubic-bezier(0.2, 0.8, 0.25, 1) both; }
-.animate-float-blob { animation: float-blob 14s ease-in-out infinite; }
+.animate-float-blob { animation: float-blob 32s ease-in-out infinite; }
+
+.brand-dot { transform-origin: center; transform-box: fill-box; }
+.brand-dot-1 { animation: brand-dot-pulse 2.6s ease-in-out infinite; }
+.brand-dot-2 { animation: brand-dot-pulse 2.6s ease-in-out infinite 0.3s; }
+.brand-dot-3 { animation: brand-dot-pulse 2.6s ease-in-out infinite 0.6s; }
+
+/* ─── Sleek scrollbar (thin) — used in sidebars, dropdowns, chat threads ── */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--border-strong)) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgb(var(--border-strong) / 0.6);
+  border-radius: 9999px;
+  border: 0;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--accent) / 0.55);
+}
+
+.scrollbar-invisible::-webkit-scrollbar { width: 0; height: 0; }
+.scrollbar-invisible { scrollbar-width: none; }
 
 .shimmer {
   background: linear-gradient(

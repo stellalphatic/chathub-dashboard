@@ -1,18 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
-import {
-  BarChart3,
-  Building2,
-  Cpu,
-  MessageSquareText,
-  Plus,
-  Users,
-} from "lucide-react";
+import { BarChart3, Building2, Cpu, Plus, Users } from "lucide-react";
 import { db } from "@/db";
 import { user as userTable } from "@/db/schema";
 import { getServerSession } from "@/lib/session";
 import { AdminUserButton } from "./_user-button";
+import { BrandMark } from "@/components/brand/brand-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 
@@ -48,11 +42,14 @@ export default async function AdminProtectedLayout({
     <div className="min-h-screen bg-[rgb(var(--bg-muted))]">
       <header className="sticky top-0 z-40 border-b border-[rgb(var(--border))] bg-[rgb(var(--bg)/0.8)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
-          <Link href="/admin" className="flex shrink-0 items-center gap-2 font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl gradient-brand text-white shadow">
-              <MessageSquareText className="h-4 w-4" />
+          <Link
+            href="/admin"
+            className="group flex shrink-0 items-center gap-2 font-semibold"
+          >
+            <BrandMark size={32} />
+            <span className="text-[rgb(var(--fg))]">
+              Chat<span className="gradient-text">Hub</span>
             </span>
-            <span className="text-[rgb(var(--fg))]">ChatHub</span>
             <Badge variant="gradient" className="ml-1 hidden sm:inline-flex text-[10px]">
               Staff
             </Badge>

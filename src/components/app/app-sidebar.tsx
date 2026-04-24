@@ -9,7 +9,7 @@ import {
   Inbox,
   Lock,
   Megaphone,
-  MessageSquareText,
+  Menu,
   PanelLeftClose,
   PanelLeftOpen,
   Plug,
@@ -18,7 +18,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { BrandMark } from "@/components/brand/brand-logo";
+import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
 import { cn } from "@/lib/utils";
 
 type Org = { slug: string; name: string };
@@ -69,6 +71,10 @@ function buildSections(slug: string): { label: string; items: NavItem[] }[] {
   ];
 }
 
+const COLLAPSED_W = "4.75rem";
+const EXPANDED_W = "16.5rem";
+const PIN_STORAGE_KEY = "chathub.sidebar.pinned";
+
 export function AppSidebar({
   orgs,
   currentSlug,
@@ -82,32 +88,73 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [collapsed, setCollapsed] = useState(false);
+
+  const [pinned, setPinned] = useState<boolean>(false);
+  const [hovered, setHovered] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // Restore pinned preference
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PIN_STORAGE_KEY);
+      if (raw !== null) setPinned(raw === "1");
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const expanded = pinned || hovered;
+
+  const setSidebarWidthVar = useCallback((w: string) => {
+    document.documentElement.style.setProperty("--sidebar-w", w);
+  }, []);
+
+  // Publish width to the document root so the main layout can offset content.
+  useEffect(() => {
+    setSidebarWidthVar(expanded ? EXPANDED_W : COLLAPSED_W);
+  }, [expanded, setSidebarWidthVar]);
+
+  // Close mobile drawer on route change
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
 
-  // Pick the slug from the current URL so the sidebar always shows the right context.
   const urlMatch = pathname?.match(/^\/app\/([^/]+)/);
   const activeSlug = urlMatch?.[1] ?? currentSlug;
 
-  const sections = buildSections(activeSlug).map((section) => ({
-    ...section,
-    items: section.items.filter((item) => !item.adminOnly || platformAdmin),
+  const sections = useMemo(
+    () =>
+      buildSections(activeSlug).map((section) => ({
+        ...section,
+        items: section.items.filter((item) => !item.adminOnly || platformAdmin),
+      })),
+    [activeSlug, platformAdmin],
+  );
+
+  const orgOptions: SelectOption[] = orgs.map((o) => ({
+    value: o.slug,
+    label: o.name,
   }));
 
-  const widthClass = collapsed ? "md:w-[4.5rem]" : "md:w-64";
+  function togglePin() {
+    setPinned((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem(PIN_STORAGE_KEY, next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
 
   return (
     <>
+      {/* Mobile header */}
       <div className="sticky top-0 z-30 flex items-center justify-between border-b border-[rgb(var(--border))] bg-[rgb(var(--bg)/0.8)] px-4 py-3 backdrop-blur-xl md:hidden">
         <Link href="/app" className="flex items-center gap-2 font-semibold">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl gradient-brand text-white">
-            <MessageSquareText className="h-4 w-4" />
-          </span>
-          ChatHub
+          <BrandMark size={30} />
+          <span className="text-[rgb(var(--fg))]">ChatHub</span>
         </Link>
         <button
           type="button"
@@ -115,7 +162,7 @@ export function AppSidebar({
           className="rounded-lg border border-[rgb(var(--border))] p-2"
           aria-label="Toggle menu"
         >
-          <PanelLeftOpen className="h-4 w-4" />
+          <Menu className="h-4 w-4" />
         </button>
       </div>
 
@@ -127,59 +174,101 @@ export function AppSidebar({
       )}
 
       <aside
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          // @ts-expect-error CSS custom property
+          "--sb-w": expanded ? EXPANDED_W : COLLAPSED_W,
+        }}
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex h-dvh flex-col border-r border-[rgb(var(--border))] bg-[rgb(var(--surface))] transition-all duration-200",
-          "w-72 max-w-[85vw]",
-          widthClass,
+          "group/sidebar fixed inset-y-0 left-0 z-50 flex h-dvh flex-col",
+          "w-72 max-w-[85vw] md:w-[var(--sb-w)]",
+          "border-r border-[rgb(var(--border))]",
+          // Gradient surface (subtle, respects both themes)
+          "bg-gradient-to-b from-[rgb(var(--surface))] via-[rgb(var(--surface))] to-[rgb(var(--surface-2))]",
+          "transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
         )}
       >
-        <div className="flex h-16 items-center justify-between border-b border-[rgb(var(--border))] px-4">
-          <Link href="/app" className="flex items-center gap-2 font-semibold">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl gradient-brand text-white shadow-md">
-              <MessageSquareText className="h-4 w-4" />
+        {/* Accent vertical ribbon */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-gradient-to-b from-[rgb(var(--brand-from))] via-[rgb(var(--brand-via))] to-[rgb(var(--brand-to))] opacity-60"
+        />
+
+        {/* Logo + pin */}
+        <div className="relative flex h-16 items-center gap-3 px-4">
+          <Link
+            href="/app"
+            className="flex shrink-0 items-center gap-3 font-semibold"
+          >
+            <BrandMark size={34} />
+            <span
+              className={cn(
+                "whitespace-nowrap text-[rgb(var(--fg))] transition-[opacity,transform] duration-200",
+                expanded
+                  ? "translate-x-0 opacity-100"
+                  : "pointer-events-none -translate-x-2 opacity-0",
+              )}
+            >
+              Chat<span className="gradient-text">Hub</span>
             </span>
-            {!collapsed && <span>ChatHub</span>}
           </Link>
+
           <button
             type="button"
-            onClick={() => setCollapsed((v) => !v)}
-            className="hidden rounded-md p-1.5 text-[rgb(var(--fg-muted))] hover:bg-[rgb(var(--surface-2))] md:inline-flex"
-            aria-label="Collapse sidebar"
+            onClick={togglePin}
+            className={cn(
+              "ml-auto hidden rounded-md p-1.5 text-[rgb(var(--fg-muted))] transition-colors hover:bg-[rgb(var(--surface-2))] hover:text-[rgb(var(--fg))] md:inline-flex",
+              expanded ? "opacity-100" : "pointer-events-none opacity-0",
+            )}
+            aria-label={pinned ? "Unpin sidebar" : "Pin sidebar open"}
+            title={pinned ? "Unpin sidebar" : "Pin sidebar open"}
           >
-            {collapsed ? (
-              <PanelLeftOpen className="h-4 w-4" />
-            ) : (
+            {pinned ? (
               <PanelLeftClose className="h-4 w-4" />
+            ) : (
+              <PanelLeftOpen className="h-4 w-4" />
             )}
           </button>
         </div>
 
-        {orgs.length > 0 && !collapsed && (
-          <div className="border-b border-[rgb(var(--border))] p-3">
-            <label
-              htmlFor="org-switch"
-              className="block text-[11px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]"
+        <div className="mx-3 border-b border-[rgb(var(--border))]" />
+
+        {/* Business switcher */}
+        {orgs.length > 0 && (
+          <div className="px-3 pb-3 pt-3">
+            <p
+              className={cn(
+                "mb-1 pl-1 text-[10.5px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))] transition-opacity duration-200",
+                expanded ? "opacity-100" : "opacity-0",
+              )}
             >
               Business
-            </label>
-            <select
-              id="org-switch"
-              value={activeSlug}
-              onChange={(e) => router.push(`/app/${e.target.value}`)}
-              className="mt-1 w-full rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-3 py-2 text-sm text-[rgb(var(--fg))]"
-            >
-              {orgs.map((o) => (
-                <option key={o.slug} value={o.slug}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
+            </p>
+            {expanded ? (
+              <SearchableSelect
+                value={activeSlug}
+                options={orgOptions}
+                onChange={(slug) => router.push(`/app/${slug}`)}
+                searchPlaceholder="Search business…"
+                placeholder="Select a business"
+              />
+            ) : (
+              <div
+                className="flex h-10 items-center justify-center rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] text-sm font-semibold text-[rgb(var(--accent))]"
+                title={orgs.find((o) => o.slug === activeSlug)?.name}
+              >
+                {(orgs.find((o) => o.slug === activeSlug)?.name ?? "?")
+                  .slice(0, 2)
+                  .toUpperCase()}
+              </div>
+            )}
           </div>
         )}
 
-        {!platformAdmin && !collapsed ? (
-          <div className="border-b border-[rgb(var(--border))] p-3">
+        {!platformAdmin && expanded ? (
+          <div className="px-3 pb-3">
             <div className="flex items-start gap-2 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-2 text-[11px] text-[rgb(var(--fg-muted))]">
               <Lock className="mt-0.5 h-3 w-3 shrink-0 text-[rgb(var(--fg-subtle))]" />
               <span>
@@ -189,14 +278,17 @@ export function AppSidebar({
           </div>
         ) : null}
 
-        <nav className="flex-1 overflow-y-auto px-2 py-3">
+        <nav className="scrollbar-thin flex-1 overflow-y-auto px-2 py-1">
           {sections.map((section) => (
             <div key={section.label} className="mb-4">
-              {!collapsed && section.items.length > 0 && (
-                <p className="px-3 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
-                  {section.label}
-                </p>
-              )}
+              <p
+                className={cn(
+                  "px-3 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))] transition-opacity duration-200",
+                  expanded ? "opacity-100" : "opacity-0",
+                )}
+              >
+                {section.items.length > 0 ? section.label : "\u00A0"}
+              </p>
               <ul className="space-y-0.5">
                 {section.items.map((item) => {
                   const active =
@@ -208,15 +300,30 @@ export function AppSidebar({
                       <Link
                         href={item.href}
                         className={cn(
-                          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                          "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
                           active
                             ? "bg-[rgb(var(--accent)/0.12)] text-[rgb(var(--accent))] font-medium"
                             : "text-[rgb(var(--fg-muted))] hover:bg-[rgb(var(--surface-2))] hover:text-[rgb(var(--fg))]",
                         )}
-                        title={collapsed ? item.label : undefined}
+                        title={!expanded ? item.label : undefined}
                       >
+                        {active && (
+                          <span
+                            aria-hidden
+                            className="absolute inset-y-1.5 left-0 w-0.5 rounded-r bg-[rgb(var(--accent))]"
+                          />
+                        )}
                         <item.icon className="h-4 w-4 shrink-0" />
-                        {!collapsed && <span className="truncate">{item.label}</span>}
+                        <span
+                          className={cn(
+                            "truncate whitespace-nowrap transition-[opacity,transform] duration-200",
+                            expanded
+                              ? "translate-x-0 opacity-100"
+                              : "pointer-events-none -translate-x-1 opacity-0",
+                          )}
+                        >
+                          {item.label}
+                        </span>
                       </Link>
                     </li>
                   );
@@ -233,20 +340,42 @@ export function AppSidebar({
               className={cn(
                 "mb-2 flex items-center gap-3 rounded-lg px-3 py-2 text-sm",
                 "border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] text-[rgb(var(--fg))]",
-                "hover:border-[rgb(var(--accent)/0.5)]",
+                "transition-colors hover:border-[rgb(var(--accent)/0.5)]",
               )}
-              title="Admin console"
+              title={!expanded ? "Staff console" : undefined}
             >
-              <BarChart3 className="h-4 w-4 text-[rgb(var(--accent))]" />
-              {!collapsed && <span>Staff console</span>}
+              <BarChart3 className="h-4 w-4 shrink-0 text-[rgb(var(--accent))]" />
+              <span
+                className={cn(
+                  "whitespace-nowrap transition-[opacity,transform] duration-200",
+                  expanded
+                    ? "translate-x-0 opacity-100"
+                    : "pointer-events-none -translate-x-1 opacity-0",
+                )}
+              >
+                Staff console
+              </span>
             </Link>
           )}
-          {!collapsed && (
-            <p className="px-3 py-1 text-[11px] text-[rgb(var(--fg-subtle))]">
-              <span className="block truncate">{userEmail}</span>
-            </p>
-          )}
+          <p
+            className={cn(
+              "px-3 py-1 text-[11px] text-[rgb(var(--fg-subtle))] transition-opacity duration-200",
+              expanded ? "opacity-100" : "opacity-0",
+            )}
+          >
+            <span className="block truncate">{userEmail}</span>
+          </p>
         </div>
+
+        {/* Expand affordance when collapsed */}
+        {!expanded && (
+          <span
+            aria-hidden
+            className="absolute right-[-10px] top-24 hidden h-9 w-5 items-center justify-center rounded-r-lg border border-l-0 border-[rgb(var(--border))] bg-[rgb(var(--surface))] text-[rgb(var(--fg-subtle))] shadow-sm md:flex"
+          >
+            <PanelLeftOpen className="h-3 w-3" />
+          </span>
+        )}
       </aside>
     </>
   );

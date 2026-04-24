@@ -190,18 +190,14 @@ export async function getAdminPlatformStats(): Promise<AdminPlatformStats> {
       .from(llmUsage)
       .where(gte(llmUsage.createdAt, since24h))
       .groupBy(llmUsage.organizationId),
+    // Raw createdAt + direction — bucket in JS to avoid tricky GROUP BY on SQL expressions.
     db
       .select({
-        day: sql<string>`to_char(${message.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`,
+        createdAt: message.createdAt,
         direction: message.direction,
-        n: count(),
       })
       .from(message)
-      .where(gte(message.createdAt, since7d))
-      .groupBy(
-        sql`to_char(${message.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`,
-        message.direction,
-      ),
+      .where(gte(message.createdAt, since7d)),
   ]);
 
   const customerMap = new Map(customerRows.map((r) => [r.organizationId, Number(r.n)]));
@@ -293,10 +289,12 @@ export async function getAdminPlatformStats(): Promise<AdminPlatformStats> {
     volumeByDay.set(dayKey(d), { inbound: 0, outbound: 0 });
   }
   for (const r of volumeRows) {
-    const cur = volumeByDay.get(r.day) ?? { inbound: 0, outbound: 0 };
-    if (r.direction === "inbound") cur.inbound += Number(r.n);
-    else if (r.direction === "outbound") cur.outbound += Number(r.n);
-    volumeByDay.set(r.day, cur);
+    const d = r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt);
+    const key = dayKey(d);
+    const cur = volumeByDay.get(key) ?? { inbound: 0, outbound: 0 };
+    if (r.direction === "inbound") cur.inbound += 1;
+    else if (r.direction === "outbound") cur.outbound += 1;
+    volumeByDay.set(key, cur);
   }
 
   const volume7d = Array.from(volumeByDay.entries())

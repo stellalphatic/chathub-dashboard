@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MessageSquareText } from "lucide-react";
+import { BrandMark } from "@/components/brand/brand-logo";
 
 const GROUPS = [
   {
@@ -34,11 +34,11 @@ export function SiteFooter() {
       <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
         <div className="grid gap-10 md:grid-cols-5">
           <div className="md:col-span-2">
-            <Link href="/" className="flex items-center gap-2 font-semibold">
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl gradient-brand text-white">
-                <MessageSquareText className="h-4 w-4" />
+            <Link href="/" className="group flex items-center gap-2 font-semibold">
+              <BrandMark size={32} />
+              <span>
+                Chat<span className="gradient-text">Hub</span>
               </span>
-              <span>ChatHub</span>
             </Link>
             <p className="mt-4 max-w-sm text-sm text-[rgb(var(--fg-muted))]">
               Multi-channel WhatsApp, Instagram and Messenger automation for modern businesses —

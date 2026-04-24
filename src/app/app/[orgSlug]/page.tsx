@@ -104,6 +104,34 @@ export default async function OrgDashboardPage({
       and(eq(message.organizationId, org.id), gte(message.createdAt, since7d)),
     );
 
+  // Extra breakdowns for the interactive donut row
+  const channelRows = await db
+    .select({ channel: message.channel, c: count() })
+    .from(message)
+    .where(
+      and(eq(message.organizationId, org.id), gte(message.createdAt, since24h)),
+    )
+    .groupBy(message.channel);
+
+  const replyRows = await db
+    .select({ sentByBot: message.sentByBot, c: count() })
+    .from(message)
+    .where(
+      and(
+        eq(message.organizationId, org.id),
+        gte(message.createdAt, since24h),
+        eq(message.direction, "outbound"),
+      ),
+    )
+    .groupBy(message.sentByBot);
+
+  const hourRows = await db
+    .select({ createdAt: message.createdAt })
+    .from(message)
+    .where(
+      and(eq(message.organizationId, org.id), gte(message.createdAt, since24h)),
+    );
+
   const volume7d = fillLastNDaysVolume(bucketMessageDates(volumeRows), 7).map(
     ({ label, count: c }) => ({ label, count: c }),
   );
@@ -139,6 +167,30 @@ export default async function OrgDashboardPage({
     },
   ];
 
+  const channels = channelRows
+    .map((r) => ({ channel: String(r.channel ?? "other"), count: r.c }))
+    .filter((r) => r.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  const who = replyRows.reduce(
+    (acc, r) => {
+      if (r.sentByBot) acc.bot += r.c;
+      else acc.human += r.c;
+      return acc;
+    },
+    { bot: 0, human: 0 },
+  );
+
+  const hourlyBuckets = new Array(24).fill(0) as number[];
+  for (const r of hourRows) {
+    const d = r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt);
+    hourlyBuckets[d.getHours()] += 1;
+  }
+  const hourly = hourlyBuckets.map((count, i) => ({
+    hour: `${i.toString().padStart(2, "0")}h`,
+    count,
+  }));
+
   const insights = buildDashboardInsights({
     messages24h,
     prevMessages24h,
@@ -155,6 +207,10 @@ export default async function OrgDashboardPage({
       volume7d={volume7d}
       sentiment={sentiment}
       insights={insights}
+      direction={{ inbound: inbound24h, outbound: outbound24h }}
+      channels={channels}
+      who={who}
+      hourly={hourly}
     />
   );
 }

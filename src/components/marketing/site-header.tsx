@@ -1,8 +1,9 @@
 "use client";
 
-import { Menu, X, MessageSquareText } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { BrandMark } from "@/components/brand/brand-logo";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -19,11 +20,14 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-[rgb(var(--border))] bg-[rgb(var(--bg)/0.7)] backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl gradient-brand text-white shadow-md">
-            <MessageSquareText className="h-4 w-4" />
+        <Link
+          href="/"
+          className="group flex items-center gap-2 font-semibold tracking-tight"
+        >
+          <BrandMark size={32} />
+          <span className="text-[rgb(var(--fg))]">
+            Chat<span className="gradient-text">Hub</span>
           </span>
-          <span className="text-[rgb(var(--fg))]">ChatHub</span>
         </Link>
 
         <nav className="hidden items-center gap-7 text-sm text-[rgb(var(--fg-muted))] md:flex">
