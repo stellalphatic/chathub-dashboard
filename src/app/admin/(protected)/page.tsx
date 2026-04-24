@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import {
   ArrowRight,
   BookText,
@@ -19,12 +20,26 @@ import {
 } from "lucide-react";
 import { getAdminPlatformStats, type AdminPlatformStats, type OrgStatRow } from "@/app/admin/stats";
 
+// Admin overview is always live data — don't prerender or cache at build time.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 async function safeGetAdminPlatformStats(): Promise<
   | { ok: true; data: AdminPlatformStats }
   | { ok: false; error: string }
 > {
   try {
-    const data = await getAdminPlatformStats();
+    // Fail fast if Supabase is slow — prevents the Lambda from hitting its
+    // 30s timeout and nuking the whole page with "took too long to respond".
+    const data = await Promise.race([
+      getAdminPlatformStats(),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("stats query timed out after 20s")),
+          20_000,
+        ),
+      ),
+    ]);
     return { ok: true, data };
   } catch (e) {
     console.error("[admin/overview] stats failed:", e);
@@ -71,45 +86,7 @@ function compact(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}m`;
 }
 
-export default async function AdminHomePage() {
-  const res = await safeGetAdminPlatformStats();
-  if (!res.ok) {
-    return (
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Platform overview
-            </h1>
-            <p className="mt-1 text-sm text-[rgb(var(--fg-muted))] sm:text-base">
-              Analytics are temporarily unavailable.
-            </p>
-          </div>
-          <Button asChild variant="gradient">
-            <Link href="/admin/organizations/new">
-              <Plus className="h-4 w-4" /> New business
-            </Link>
-          </Button>
-        </div>
-        <Card>
-          <CardContent className="space-y-2 p-6">
-            <p className="text-sm font-medium text-rose-500">Failed to load stats</p>
-            <p className="font-mono text-xs text-[rgb(var(--fg-muted))]">
-              {res.error}
-            </p>
-            <p className="text-xs text-[rgb(var(--fg-subtle))]">
-              This admin page keeps working even when analytics fail. Check the worker logs
-              or Supabase status and refresh.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-  const stats = res.data;
-
-  const msgTrend = trendPct(stats.messages24h, stats.messagesPrev24h);
-
+export default function AdminHomePage() {
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -129,6 +106,62 @@ export default async function AdminHomePage() {
         </Button>
       </div>
 
+      <Suspense fallback={<AdminOverviewSkeleton />}>
+        <AdminOverviewData />
+      </Suspense>
+    </div>
+  );
+}
+
+function AdminOverviewSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Card key={i} className="h-[92px] animate-pulse">
+            <CardContent className="flex h-full items-center justify-between p-4">
+              <div className="space-y-2">
+                <div className="h-3 w-20 rounded bg-[rgb(var(--surface-2))]" />
+                <div className="h-6 w-12 rounded bg-[rgb(var(--surface-2))]" />
+                <div className="h-2 w-16 rounded bg-[rgb(var(--surface-2))]" />
+              </div>
+              <div className="h-10 w-10 rounded-xl bg-[rgb(var(--surface-2))]" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Card className="h-64 animate-pulse">
+        <CardContent className="h-full p-6" />
+      </Card>
+    </div>
+  );
+}
+
+async function AdminOverviewData() {
+  const res = await safeGetAdminPlatformStats();
+  if (!res.ok) {
+    return (
+      <Card>
+        <CardContent className="space-y-2 p-6">
+          <p className="text-sm font-medium text-rose-500">Failed to load stats</p>
+          <p className="font-mono text-xs text-[rgb(var(--fg-muted))]">
+            {res.error}
+          </p>
+          <p className="text-xs text-[rgb(var(--fg-subtle))]">
+            The admin shell stays usable even when analytics fail. Check your
+            Supabase status and refresh. You can still manage businesses from
+            the nav above.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+  const stats = res.data;
+
+  const msgTrend = trendPct(stats.messages24h, stats.messagesPrev24h);
+
+  return (
+    <div className="space-y-8">
       {/* KPI strip */}
       <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard

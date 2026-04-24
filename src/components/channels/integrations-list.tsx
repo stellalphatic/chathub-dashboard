@@ -236,69 +236,74 @@ function IntegrationBody({
         ) : null}
       </div>
 
-      {tab === "setup" ? (
-        <div>
-          <ol className="space-y-4">
-            {it.steps.map((s, i) => (
-              <li key={i} className="flex gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--accent)/0.15)] text-[11px] font-semibold text-[rgb(var(--accent))]">
-                  {i + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-[rgb(var(--fg))]">
-                    {s.title}
-                  </p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-[rgb(var(--fg-muted))]">
-                    {s.body}
-                  </p>
-                  {s.links && s.links.length > 0 ? (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {s.links.map((l) => (
-                        <a
-                          key={l.href}
-                          href={l.href}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-[11px] font-medium text-[rgb(var(--accent))] hover:underline"
-                        >
-                          {l.label}
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-          </ol>
+      {/*
+        Render BOTH tabs and just hide the inactive one. If we mount/unmount
+        the credentials form each time the tab changes, React resets its
+        internal state and everything the user typed is lost.
+      */}
+      <div className={tab === "setup" ? "" : "hidden"}>
+        <ol className="space-y-4">
+          {it.steps.map((s, i) => (
+            <li key={i} className="flex gap-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--accent)/0.15)] text-[11px] font-semibold text-[rgb(var(--accent))]">
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-[rgb(var(--fg))]">
+                  {s.title}
+                </p>
+                <p className="mt-0.5 text-xs leading-relaxed text-[rgb(var(--fg-muted))]">
+                  {s.body}
+                </p>
+                {s.links && s.links.length > 0 ? (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {s.links.map((l) => (
+                      <a
+                        key={l.href}
+                        href={l.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-[rgb(var(--accent))] hover:underline"
+                      >
+                        {l.label}
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ol>
 
-          {it.docsUrl ? (
-            <div className="mt-4 flex items-center justify-between rounded-xl border border-dashed border-[rgb(var(--border))] p-3">
-              <p className="text-xs text-[rgb(var(--fg-muted))]">
-                Need more detail?
-              </p>
-              <Button size="sm" variant="ghost" asChild>
-                <a href={it.docsUrl} target="_blank" rel="noreferrer">
-                  Full docs <ExternalLink className="h-3 w-3" />
-                </a>
-              </Button>
-            </div>
-          ) : null}
-
-          <div className="mt-4 flex items-center justify-end">
-            <Button
-              type="button"
-              variant="gradient"
-              size="sm"
-              onClick={() => setTab("credentials")}
-            >
-              Enter credentials <ArrowRight className="h-3.5 w-3.5" />
+        {it.docsUrl ? (
+          <div className="mt-4 flex items-center justify-between rounded-xl border border-dashed border-[rgb(var(--border))] p-3">
+            <p className="text-xs text-[rgb(var(--fg-muted))]">
+              Need more detail?
+            </p>
+            <Button size="sm" variant="ghost" asChild>
+              <a href={it.docsUrl} target="_blank" rel="noreferrer">
+                Full docs <ExternalLink className="h-3 w-3" />
+              </a>
             </Button>
           </div>
+        ) : null}
+
+        <div className="mt-4 flex items-center justify-end">
+          <Button
+            type="button"
+            variant="gradient"
+            size="sm"
+            onClick={() => setTab("credentials")}
+          >
+            Enter credentials <ArrowRight className="h-3.5 w-3.5" />
+          </Button>
         </div>
-      ) : (
+      </div>
+
+      <div className={tab === "credentials" ? "" : "hidden"}>
         <CredentialsForm it={it} orgSlug={orgSlug} />
-      )}
+      </div>
     </div>
   );
 }

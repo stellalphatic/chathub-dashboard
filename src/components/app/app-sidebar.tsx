@@ -71,8 +71,8 @@ function buildSections(slug: string): { label: string; items: NavItem[] }[] {
   ];
 }
 
-const COLLAPSED_W = "4.75rem";
-const EXPANDED_W = "16.5rem";
+const COLLAPSED_W = "5rem"; // 80px — roomy for a 44px logo + padding
+const EXPANDED_W = "17rem";
 const PIN_STORAGE_KEY = "chathub.sidebar.pinned";
 
 export function AppSidebar({
@@ -93,7 +93,6 @@ export function AppSidebar({
   const [hovered, setHovered] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Restore pinned preference
   useEffect(() => {
     try {
       const raw = localStorage.getItem(PIN_STORAGE_KEY);
@@ -105,11 +104,12 @@ export function AppSidebar({
 
   const expanded = pinned || hovered;
 
+  // Publish sidebar width on <html> so the main layout's
+  // `md:pl-[var(--sidebar-w)]` follows the current state.
   const setSidebarWidthVar = useCallback((w: string) => {
     document.documentElement.style.setProperty("--sidebar-w", w);
   }, []);
 
-  // Publish width to the document root so the main layout can offset content.
   useEffect(() => {
     setSidebarWidthVar(expanded ? EXPANDED_W : COLLAPSED_W);
   }, [expanded, setSidebarWidthVar]);
@@ -153,8 +153,10 @@ export function AppSidebar({
       {/* Mobile header */}
       <div className="sticky top-0 z-30 flex items-center justify-between border-b border-[rgb(var(--border))] bg-[rgb(var(--bg)/0.8)] px-4 py-3 backdrop-blur-xl md:hidden">
         <Link href="/app" className="flex items-center gap-2 font-semibold">
-          <BrandMark size={30} />
-          <span className="text-[rgb(var(--fg))]">ChatHub</span>
+          <BrandMark size={32} />
+          <span className="text-[rgb(var(--fg))]">
+            Chat<span className="gradient-text">Hub</span>
+          </span>
         </Link>
         <button
           type="button"
@@ -183,8 +185,8 @@ export function AppSidebar({
         className={cn(
           "group/sidebar fixed inset-y-0 left-0 z-50 flex h-dvh flex-col",
           "w-72 max-w-[85vw] md:w-[var(--sb-w)]",
+          "overflow-x-hidden", // ← critical: hides overflowing labels while collapsing
           "border-r border-[rgb(var(--border))]",
-          // Gradient surface (subtle, respects both themes)
           "bg-gradient-to-b from-[rgb(var(--surface))] via-[rgb(var(--surface))] to-[rgb(var(--surface-2))]",
           "transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
@@ -196,41 +198,37 @@ export function AppSidebar({
           className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-gradient-to-b from-[rgb(var(--brand-from))] via-[rgb(var(--brand-via))] to-[rgb(var(--brand-to))] opacity-60"
         />
 
-        {/* Logo + pin */}
-        <div className="relative flex h-16 items-center gap-3 px-4">
+        {/* Logo row — icon stays centered in the collapsed column */}
+        <div className="flex h-[72px] shrink-0 items-center px-3">
           <Link
             href="/app"
-            className="flex shrink-0 items-center gap-3 font-semibold"
+            className="group relative flex h-12 w-full items-center gap-3 rounded-xl px-2 font-semibold hover:bg-[rgb(var(--surface-2))]"
           >
-            <BrandMark size={34} />
-            <span
-              className={cn(
-                "whitespace-nowrap text-[rgb(var(--fg))] transition-[opacity,transform] duration-200",
-                expanded
-                  ? "translate-x-0 opacity-100"
-                  : "pointer-events-none -translate-x-2 opacity-0",
-              )}
-            >
-              Chat<span className="gradient-text">Hub</span>
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center">
+              <BrandMark size={44} />
             </span>
+            <CollapsibleLabel expanded={expanded}>
+              <span className="text-[17px] text-[rgb(var(--fg))]">
+                Chat<span className="gradient-text">Hub</span>
+              </span>
+            </CollapsibleLabel>
           </Link>
 
-          <button
-            type="button"
-            onClick={togglePin}
-            className={cn(
-              "ml-auto hidden rounded-md p-1.5 text-[rgb(var(--fg-muted))] transition-colors hover:bg-[rgb(var(--surface-2))] hover:text-[rgb(var(--fg))] md:inline-flex",
-              expanded ? "opacity-100" : "pointer-events-none opacity-0",
-            )}
-            aria-label={pinned ? "Unpin sidebar" : "Pin sidebar open"}
-            title={pinned ? "Unpin sidebar" : "Pin sidebar open"}
-          >
-            {pinned ? (
-              <PanelLeftClose className="h-4 w-4" />
-            ) : (
-              <PanelLeftOpen className="h-4 w-4" />
-            )}
-          </button>
+          {expanded && (
+            <button
+              type="button"
+              onClick={togglePin}
+              className="hidden rounded-md p-1.5 text-[rgb(var(--fg-muted))] transition-colors hover:bg-[rgb(var(--surface-2))] hover:text-[rgb(var(--fg))] md:inline-flex"
+              aria-label={pinned ? "Unpin sidebar" : "Pin sidebar open"}
+              title={pinned ? "Unpin sidebar" : "Pin sidebar open"}
+            >
+              {pinned ? (
+                <PanelLeftClose className="h-4 w-4" />
+              ) : (
+                <PanelLeftOpen className="h-4 w-4" />
+              )}
+            </button>
+          )}
         </div>
 
         <div className="mx-3 border-b border-[rgb(var(--border))]" />
@@ -238,25 +236,22 @@ export function AppSidebar({
         {/* Business switcher */}
         {orgs.length > 0 && (
           <div className="px-3 pb-3 pt-3">
-            <p
-              className={cn(
-                "mb-1 pl-1 text-[10.5px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))] transition-opacity duration-200",
-                expanded ? "opacity-100" : "opacity-0",
-              )}
-            >
-              Business
-            </p>
             {expanded ? (
-              <SearchableSelect
-                value={activeSlug}
-                options={orgOptions}
-                onChange={(slug) => router.push(`/app/${slug}`)}
-                searchPlaceholder="Search business…"
-                placeholder="Select a business"
-              />
+              <>
+                <p className="mb-1 pl-1 text-[10.5px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
+                  Business
+                </p>
+                <SearchableSelect
+                  value={activeSlug}
+                  options={orgOptions}
+                  onChange={(slug) => router.push(`/app/${slug}`)}
+                  searchPlaceholder="Search business…"
+                  placeholder="Select a business"
+                />
+              </>
             ) : (
               <div
-                className="flex h-10 items-center justify-center rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] text-sm font-semibold text-[rgb(var(--accent))]"
+                className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] text-xs font-semibold text-[rgb(var(--accent))]"
                 title={orgs.find((o) => o.slug === activeSlug)?.name}
               >
                 {(orgs.find((o) => o.slug === activeSlug)?.name ?? "?")
@@ -278,93 +273,77 @@ export function AppSidebar({
           </div>
         ) : null}
 
-        <nav className="scrollbar-thin flex-1 overflow-y-auto px-2 py-1">
-          {sections.map((section) => (
-            <div key={section.label} className="mb-4">
-              <p
-                className={cn(
-                  "px-3 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))] transition-opacity duration-200",
-                  expanded ? "opacity-100" : "opacity-0",
+        <nav className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-1">
+          {sections.map((section) => {
+            if (section.items.length === 0) return null;
+            return (
+              <div key={section.label} className="mb-4">
+                {expanded && (
+                  <p className="whitespace-nowrap px-3 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
+                    {section.label}
+                  </p>
                 )}
-              >
-                {section.items.length > 0 ? section.label : "\u00A0"}
-              </p>
-              <ul className="space-y-0.5">
-                {section.items.map((item) => {
-                  const active =
-                    item.match === "exact"
-                      ? pathname === item.href
-                      : pathname === item.href || pathname.startsWith(`${item.href}/`);
-                  return (
-                    <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                          active
-                            ? "bg-[rgb(var(--accent)/0.12)] text-[rgb(var(--accent))] font-medium"
-                            : "text-[rgb(var(--fg-muted))] hover:bg-[rgb(var(--surface-2))] hover:text-[rgb(var(--fg))]",
-                        )}
-                        title={!expanded ? item.label : undefined}
-                      >
-                        {active && (
-                          <span
-                            aria-hidden
-                            className="absolute inset-y-1.5 left-0 w-0.5 rounded-r bg-[rgb(var(--accent))]"
-                          />
-                        )}
-                        <item.icon className="h-4 w-4 shrink-0" />
-                        <span
+                <ul className="space-y-0.5">
+                  {section.items.map((item) => {
+                    const active =
+                      item.match === "exact"
+                        ? pathname === item.href
+                        : pathname === item.href ||
+                          pathname.startsWith(`${item.href}/`);
+                    return (
+                      <li key={item.href}>
+                        <Link
+                          href={item.href}
                           className={cn(
-                            "truncate whitespace-nowrap transition-[opacity,transform] duration-200",
-                            expanded
-                              ? "translate-x-0 opacity-100"
-                              : "pointer-events-none -translate-x-1 opacity-0",
+                            "relative flex h-10 items-center gap-3 rounded-lg px-3 text-sm transition-colors",
+                            active
+                              ? "bg-[rgb(var(--accent)/0.12)] text-[rgb(var(--accent))] font-medium"
+                              : "text-[rgb(var(--fg-muted))] hover:bg-[rgb(var(--surface-2))] hover:text-[rgb(var(--fg))]",
                           )}
+                          title={!expanded ? item.label : undefined}
                         >
-                          {item.label}
-                        </span>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+                          {active && (
+                            <span
+                              aria-hidden
+                              className="absolute inset-y-1.5 left-0 w-0.5 rounded-r bg-[rgb(var(--accent))]"
+                            />
+                          )}
+                          <item.icon className="h-[18px] w-[18px] shrink-0" />
+                          <CollapsibleLabel expanded={expanded}>
+                            {item.label}
+                          </CollapsibleLabel>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
         </nav>
 
-        <div className="border-t border-[rgb(var(--border))] p-3">
+        <div className="shrink-0 border-t border-[rgb(var(--border))] p-3">
           {platformAdmin && (
             <Link
               href="/admin"
               className={cn(
-                "mb-2 flex items-center gap-3 rounded-lg px-3 py-2 text-sm",
+                "mb-2 flex h-10 items-center gap-3 rounded-lg px-3 text-sm",
                 "border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] text-[rgb(var(--fg))]",
                 "transition-colors hover:border-[rgb(var(--accent)/0.5)]",
               )}
               title={!expanded ? "Staff console" : undefined}
             >
-              <BarChart3 className="h-4 w-4 shrink-0 text-[rgb(var(--accent))]" />
-              <span
-                className={cn(
-                  "whitespace-nowrap transition-[opacity,transform] duration-200",
-                  expanded
-                    ? "translate-x-0 opacity-100"
-                    : "pointer-events-none -translate-x-1 opacity-0",
-                )}
-              >
+              <BarChart3 className="h-[18px] w-[18px] shrink-0 text-[rgb(var(--accent))]" />
+              <CollapsibleLabel expanded={expanded}>
                 Staff console
-              </span>
+              </CollapsibleLabel>
             </Link>
           )}
-          <p
-            className={cn(
-              "px-3 py-1 text-[11px] text-[rgb(var(--fg-subtle))] transition-opacity duration-200",
-              expanded ? "opacity-100" : "opacity-0",
-            )}
-          >
-            <span className="block truncate">{userEmail}</span>
-          </p>
+          {expanded && (
+            <p className="mt-1 whitespace-nowrap px-3 text-[11px] text-[rgb(var(--fg-subtle))]">
+              <span className="block truncate">{userEmail}</span>
+            </p>
+          )}
         </div>
 
         {/* Expand affordance when collapsed */}
@@ -378,5 +357,32 @@ export function AppSidebar({
         )}
       </aside>
     </>
+  );
+}
+
+/**
+ * Label that animates between hidden (max-width: 0) and fully-visible using a
+ * max-width transition. Because max-width hits zero, it never overflows the
+ * collapsed sidebar, and the icon next to it stays perfectly anchored.
+ */
+function CollapsibleLabel({
+  expanded,
+  children,
+}: {
+  expanded: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      aria-hidden={!expanded}
+      className={cn(
+        "min-w-0 overflow-hidden whitespace-nowrap transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        expanded
+          ? "max-w-[12rem] opacity-100"
+          : "pointer-events-none max-w-0 opacity-0",
+      )}
+    >
+      {children}
+    </span>
   );
 }

@@ -34,8 +34,10 @@ export default async function AdminProtectedLayout({
     .where(eq(userTable.id, session.user.id))
     .limit(1);
 
+  // Authenticated but not a platform admin → bounce to the business workspace
+  // (avoids redirect-loops through /sign-in for users that DO have a session).
   if (!row?.platformAdmin) {
-    redirect("/login?notice=not_staff");
+    redirect("/app?notice=not_staff");
   }
 
   return (

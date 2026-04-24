@@ -90,20 +90,23 @@ export async function getAdminPlatformStats(): Promise<AdminPlatformStats> {
   const since7d = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
   since7d.setUTCHours(0, 0, 0, 0);
 
-  const [
-    orgs,
-    customerRows,
-    msg24h,
-    msgPrev24h,
-    msgLast,
-    botRows,
-    channelRows,
-    docRows,
-    tplRows,
-    faqRows,
-    llm24h,
-    volumeRows,
-  ] = await Promise.all([
+  // Use allSettled so a single slow/failing query can't hang the entire page.
+  // Each result is unwrapped to its expected type; any individual failure is
+  // logged and replaced with an empty array so the shell still renders.
+  function unwrap<T>(
+    results: PromiseSettledResult<unknown>[],
+    i: number,
+    fallback: T,
+    label: string,
+  ): T {
+    const r = results[i];
+    if (!r) return fallback;
+    if (r.status === "fulfilled") return r.value as T;
+    console.warn(`[admin/stats] query "${label}" failed:`, r.reason);
+    return fallback;
+  }
+
+  const settled = (await Promise.allSettled([
     db
       .select({
         id: organization.id,
@@ -198,7 +201,43 @@ export async function getAdminPlatformStats(): Promise<AdminPlatformStats> {
       })
       .from(message)
       .where(gte(message.createdAt, since7d)),
-  ]);
+  ])) as PromiseSettledResult<unknown>[];
+
+  type OrgsRow = {
+    id: string;
+    name: string;
+    slug: string;
+    createdAt: Date;
+  };
+  type CustRow = { organizationId: string; n: number };
+  type MsgRow = { organizationId: string; n: number };
+  type MsgWithLastRow = { organizationId: string; n: number; last: Date };
+  type MsgLastRow = { organizationId: string; last: Date };
+  type BotRow = { organizationId: string; enabled: boolean | null };
+  type ChannelRow = { organizationId: string; channel: string; n: number };
+  type DocRow = { organizationId: string; status: string; n: number };
+  type TplRow = { organizationId: string; status: string; n: number };
+  type FaqRow = { organizationId: string; n: number };
+  type LlmRow = {
+    organizationId: string;
+    calls: number;
+    tokens: number;
+    fails: number;
+  };
+  type VolRow = { createdAt: Date; direction: string };
+
+  const orgs = unwrap<OrgsRow[]>(settled, 0, [], "orgs");
+  const customerRows = unwrap<CustRow[]>(settled, 1, [], "customers");
+  const msg24h = unwrap<MsgWithLastRow[]>(settled, 2, [], "msg24h");
+  const msgPrev24h = unwrap<MsgRow[]>(settled, 3, [], "msgPrev24h");
+  const msgLast = unwrap<MsgLastRow[]>(settled, 4, [], "msgLast");
+  const botRows = unwrap<BotRow[]>(settled, 5, [], "botRows");
+  const channelRows = unwrap<ChannelRow[]>(settled, 6, [], "channelRows");
+  const docRows = unwrap<DocRow[]>(settled, 7, [], "docRows");
+  const tplRows = unwrap<TplRow[]>(settled, 8, [], "tplRows");
+  const faqRows = unwrap<FaqRow[]>(settled, 9, [], "faqRows");
+  const llm24h = unwrap<LlmRow[]>(settled, 10, [], "llm24h");
+  const volumeRows = unwrap<VolRow[]>(settled, 11, [], "volumeRows");
 
   const customerMap = new Map(customerRows.map((r) => [r.organizationId, Number(r.n)]));
   const msg24Map = new Map(

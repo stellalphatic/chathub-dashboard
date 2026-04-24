@@ -27,10 +27,10 @@ export default function NotFound() {
           View demo
         </Link>
         <Link
-          href="/login"
+          href="/sign-in"
           className="rounded-xl border border-white/15 px-5 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-white/25 hover:text-white"
         >
-          Client login
+          Sign in
         </Link>
       </div>
     </div>
