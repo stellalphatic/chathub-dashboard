@@ -15,14 +15,34 @@ const ALGO = "aes-256-gcm";
 const IV_LEN = 12; // GCM recommended
 const TAG_LEN = 16;
 
-function loadKey(envName: string): Buffer | null {
-  const raw = process.env[envName];
-  if (!raw) return null;
-  // Accept either base64 or hex
-  if (/^[0-9a-f]+$/i.test(raw) && raw.length === 64) {
-    return Buffer.from(raw, "hex");
+/**
+ * Static env reads. Next.js can ONLY inline `process.env.X` (static property
+ * access) at build time. Bracket access like `process.env[name]` is dynamic
+ * and falls through to the Lambda runtime — which on Amplify sometimes
+ * doesn't carry the value, even when it's set in the console.
+ *
+ * Keep this list aligned with `serverEnv` in next.config.ts.
+ */
+function readEnvByName(envName: string): string | undefined {
+  switch (envName) {
+    case "ENCRYPTION_KEY":
+      return process.env.ENCRYPTION_KEY || undefined;
+    case "ENCRYPTION_KEY_PREVIOUS":
+      return process.env.ENCRYPTION_KEY_PREVIOUS || undefined;
+    default:
+      return undefined;
   }
-  const buf = Buffer.from(raw, "base64");
+}
+
+function loadKey(envName: string): Buffer | null {
+  const raw = readEnvByName(envName);
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  // Accept either base64 or hex
+  if (/^[0-9a-f]+$/i.test(trimmed) && trimmed.length === 64) {
+    return Buffer.from(trimmed, "hex");
+  }
+  const buf = Buffer.from(trimmed, "base64");
   if (buf.length !== 32) {
     throw new Error(
       `${envName} must decode to 32 bytes (got ${buf.length}). Generate with: openssl rand -base64 32`,
