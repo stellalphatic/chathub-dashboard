@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import {
   Bot,
   CheckCircle2,
+  Mic,
   MessageSquareHeart,
   ShieldAlert,
   Sliders,
@@ -11,7 +12,7 @@ import {
   Wand2,
   X,
 } from "lucide-react";
-import { upsertBotConfigAction } from "@/lib/org-actions";
+import { upsertBotConfigAction, upsertBotVoiceAction } from "@/lib/org-actions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,14 @@ export type BotConfigInput = {
   vectorStore: string;
   temperatureX100: number;
   maxOutputTokens: number;
+  // Voice / TTS / transcription
+  voiceReplyEnabled?: boolean;
+  voiceProvider?: string | null;
+  voiceVoiceId?: string | null;
+  voiceModel?: string | null;
+  voiceApiKeySet?: boolean; // server-only: just tells UI whether a secret exists
+  transcriptionProvider?: string | null;
+  transcriptionLanguage?: string | null;
 };
 
 const TONE_PRESETS = [
@@ -221,6 +230,9 @@ export function BotConfigForm({
           </TabsTrigger>
           <TabsTrigger value="advanced">
             <Sliders className="h-3.5 w-3.5" /> Advanced
+          </TabsTrigger>
+          <TabsTrigger value="voice">
+            <Mic className="h-3.5 w-3.5" /> Voice
           </TabsTrigger>
         </TabsList>
 
@@ -451,6 +463,11 @@ export function BotConfigForm({
             )}
           </div>
         </TabsContent>
+
+        {/* Voice / TTS / Transcription */}
+        <TabsContent value="voice" className="space-y-6">
+          <VoiceTab orgSlug={orgSlug} initial={initial} />
+        </TabsContent>
       </Tabs>
 
       {error && (
@@ -470,5 +487,199 @@ export function BotConfigForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Voice/TTS configuration. Saves independently from the main bot config so
+ * the API key (a separate encrypted column) doesn't need to round-trip
+ * through the rest of the form.
+ *
+ * Default behaviour: voiceReplyEnabled = false → reply with TEXT only,
+ * exactly as before. Turning it on requires picking a provider AND saving
+ * an API key; if any TTS call fails at runtime, the worker falls back to
+ * text automatically (configured server-side).
+ */
+function VoiceTab({
+  orgSlug,
+  initial,
+}: {
+  orgSlug: string;
+  initial: BotConfigInput;
+}) {
+  const [enabled, setEnabled] = useState<boolean>(
+    Boolean(initial.voiceReplyEnabled),
+  );
+  const [provider, setProvider] = useState<string>(
+    initial.voiceProvider ?? "elevenlabs",
+  );
+  const [voiceId, setVoiceId] = useState<string>(initial.voiceVoiceId ?? "");
+  const [model, setModel] = useState<string>(
+    initial.voiceModel ?? "eleven_turbo_v2",
+  );
+  const [apiKey, setApiKey] = useState<string>(""); // never pre-filled
+  const [transProvider, setTransProvider] = useState<string>(
+    initial.transcriptionProvider ?? "groq",
+  );
+  const [transLang, setTransLang] = useState<string>(
+    initial.transcriptionLanguage ?? "ur",
+  );
+  const [msg, setMsg] = useState<{ ok?: string; err?: string } | null>(null);
+  const [pending, start] = useTransition();
+
+  const submit = () => {
+    setMsg(null);
+    start(async () => {
+      const res = await upsertBotVoiceAction({
+        orgSlug,
+        voiceReplyEnabled: enabled,
+        voiceProvider: provider as "elevenlabs" | "openai" | "none",
+        voiceVoiceId: voiceId.trim() || null,
+        voiceModel: model.trim() || null,
+        // Empty key → keep the existing one. Only send when user typed something.
+        voiceApiKey: apiKey.trim() ? apiKey.trim() : null,
+        transcriptionProvider: transProvider as "groq" | "openai",
+        transcriptionLanguage: transLang.trim() || null,
+      });
+      if ("error" in res) setMsg({ err: res.error });
+      else {
+        setMsg({ ok: "Voice settings saved." });
+        setApiKey(""); // clear secret from the input
+      }
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Switch
+        checked={enabled}
+        onCheckedChange={setEnabled}
+        label="Reply with voice when the customer sent a voice note"
+        description="Off by default. When off, the bot always replies with text — even for voice-note inbound."
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <Label>TTS provider</Label>
+          <select
+            value={provider}
+            onChange={(e) => setProvider(e.target.value)}
+            className="mt-1 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-3 py-2 text-sm"
+          >
+            <option value="elevenlabs">ElevenLabs</option>
+            <option value="openai">OpenAI TTS</option>
+            <option value="none">None (text only)</option>
+          </select>
+        </div>
+        <div>
+          <Label>Voice ID / name</Label>
+          <Input
+            className="mt-1"
+            value={voiceId}
+            onChange={(e) => setVoiceId(e.target.value)}
+            placeholder={
+              provider === "elevenlabs"
+                ? "21m00Tcm4TlvDq8ikWAM"
+                : provider === "openai"
+                  ? "alloy"
+                  : "—"
+            }
+          />
+        </div>
+        <div>
+          <Label>Voice model</Label>
+          <Input
+            className="mt-1"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder={
+              provider === "elevenlabs"
+                ? "eleven_turbo_v2"
+                : provider === "openai"
+                  ? "tts-1"
+                  : "—"
+            }
+          />
+        </div>
+        <div>
+          <Label>
+            API key{" "}
+            <span className="text-[11px] font-normal text-[rgb(var(--fg-subtle))]">
+              {initial.voiceApiKeySet
+                ? "(saved — leave blank to keep)"
+                : "(required)"}
+            </span>
+          </Label>
+          <Input
+            className="mt-1 font-mono text-xs"
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={
+              initial.voiceApiKeySet ? "•••••••• (saved)" : "sk_..."
+            }
+            autoComplete="off"
+          />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-4">
+        <p className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
+          Transcription (Speech-to-Text)
+        </p>
+        <p className="mt-1 text-xs text-[rgb(var(--fg-muted))]">
+          Used when customers send voice notes. Falls back to the
+          platform-wide GROQ_API_KEY if not set per business.
+        </p>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label>STT provider</Label>
+            <select
+              value={transProvider}
+              onChange={(e) => setTransProvider(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-3 py-2 text-sm"
+            >
+              <option value="groq">Groq Whisper (default, fastest)</option>
+              <option value="openai">OpenAI Whisper</option>
+            </select>
+          </div>
+          <div>
+            <Label>Preferred language</Label>
+            <Input
+              className="mt-1"
+              value={transLang}
+              onChange={(e) => setTransLang(e.target.value)}
+              placeholder="ur (Urdu) / hi (Hindi) / en"
+            />
+            <p className="mt-1 text-[11px] text-[rgb(var(--fg-subtle))]">
+              BCP-47 code. Use <code>ur</code> to force Roman/Arabic-script
+              Urdu output for Urdu/Hindi audio.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {msg?.err && (
+        <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-600 dark:text-rose-300">
+          {msg.err}
+        </p>
+      )}
+      {msg?.ok && (
+        <p className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-300">
+          <CheckCircle2 className="h-4 w-4" /> {msg.ok}
+        </p>
+      )}
+
+      <div className="flex items-center justify-end">
+        <Button
+          type="button"
+          variant="gradient"
+          disabled={pending}
+          onClick={submit}
+        >
+          {pending ? "Saving…" : "Save voice settings"}
+        </Button>
+      </div>
+    </div>
   );
 }

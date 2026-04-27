@@ -1,6 +1,7 @@
 import type {
   ChannelSender,
   NormalizedInboundMessage,
+  SendAudioInput,
   SendResult,
   SendTemplateInput,
   SendTextInput,
@@ -56,15 +57,18 @@ export function createYCloudSender(
   return {
     /**
      * Mark an inbound message as read on WhatsApp (drives blue ticks).
-     * YCloud follows Meta's Cloud API: POST /messages with status:"read".
+     * YCloud's status update endpoint requires `from` (the business phone)
+     * + `messageId` + `status:"read"`.
      * Best-effort — failures are logged but never thrown.
      */
     async markAsRead(externalMessageId: string): Promise<void> {
       if (!externalMessageId) return;
+      if (!config.fromPhoneE164) return;
       try {
         await post("/whatsapp/messages", {
-          status: "read",
+          from: config.fromPhoneE164,
           messageId: externalMessageId,
+          status: "read",
         });
       } catch (e) {
         console.warn("[ycloud markAsRead] failed:", (e as Error).message);
@@ -72,16 +76,17 @@ export function createYCloudSender(
     },
 
     /**
-     * Show "typing…" indicator. WhatsApp Cloud API added typing indicators
-     * in 2024 — YCloud may or may not pass them through. Best-effort: we
-     * try, log on failure, and never throw.
+     * Show "typing…" indicator (WhatsApp Cloud API 2024+). YCloud bundles
+     * it with the same status update — same required fields.
      */
     async showTyping(externalMessageId: string): Promise<void> {
       if (!externalMessageId) return;
+      if (!config.fromPhoneE164) return;
       try {
         await post("/whatsapp/messages", {
-          status: "read",
+          from: config.fromPhoneE164,
           messageId: externalMessageId,
+          status: "read",
           typingIndicator: { type: "text" },
         });
       } catch (e) {
@@ -126,6 +131,25 @@ export function createYCloudSender(
         to: input.toPhoneE164,
         type: "text",
         text: { body: input.body },
+      });
+      const id = String(
+        (json["id"] ?? json["wamid"] ?? json["messageId"]) as string,
+      );
+      return { providerMessageId: id, raw: json };
+    },
+
+    async sendAudio(input: SendAudioInput): Promise<SendResult> {
+      if (!input.toPhoneE164) {
+        throw new Error("ycloud sendAudio requires toPhoneE164");
+      }
+      if (!input.audioUrl) {
+        throw new Error("ycloud sendAudio requires audioUrl");
+      }
+      const json = await post("/whatsapp/messages", {
+        from: config.fromPhoneE164,
+        to: input.toPhoneE164,
+        type: "audio",
+        audio: { link: input.audioUrl },
       });
       const id = String(
         (json["id"] ?? json["wamid"] ?? json["messageId"]) as string,
@@ -180,11 +204,15 @@ function extractProfileName(
     return t.length > 0 ? t : undefined;
   }
   const candidates: Maybe[] = [];
-  // YCloud-direct shape — profile.name on the inner event
+  // YCloud current shape — `customerProfile.name`. CONFIRMED via real
+  // production webhook payload (Apr 2026):
+  //   whatsappInboundMessage.customerProfile.name = "Usama"
   if (innerEvent) {
+    const cp = innerEvent["customerProfile"] as { name?: unknown } | undefined;
+    candidates.push(cp?.name);
+    // Older variants
     const p1 = innerEvent["profile"] as { name?: unknown } | undefined;
     candidates.push(p1?.name);
-    // YCloud sometimes nests under whatsappContact / contact
     const p2 = innerEvent["whatsappContact"] as { name?: unknown } | undefined;
     candidates.push(p2?.name);
     const p3 = innerEvent["contact"] as
@@ -192,7 +220,6 @@ function extractProfileName(
       | undefined;
     candidates.push(p3?.name);
     candidates.push(p3?.profile?.name);
-    // Older payloads put it on `senderProfile`
     const p4 = innerEvent["senderProfile"] as { name?: unknown } | undefined;
     candidates.push(p4?.name);
     candidates.push(innerEvent["fromName"]);

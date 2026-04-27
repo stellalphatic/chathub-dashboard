@@ -447,6 +447,100 @@ export async function upsertBotConfigAction(
   return { ok: true };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Bot voice / TTS / STT
+// ─────────────────────────────────────────────────────────────────────────────
+
+const botVoiceSchema = z.object({
+  orgSlug: z.string(),
+  voiceReplyEnabled: z.boolean(),
+  voiceProvider: z.enum(["elevenlabs", "openai", "none"]).default("elevenlabs"),
+  voiceVoiceId: z.string().nullable(),
+  voiceModel: z.string().nullable(),
+  /** null = keep existing secret. Empty string also treated as "keep". */
+  voiceApiKey: z.string().nullable(),
+  transcriptionProvider: z.enum(["groq", "openai"]).default("groq"),
+  transcriptionLanguage: z.string().nullable(),
+});
+
+export async function upsertBotVoiceAction(
+  raw: z.infer<typeof botVoiceSchema>,
+): Promise<{ ok: true } | { error: string }> {
+  try {
+    const p = botVoiceSchema.safeParse(raw);
+    if (!p.success) {
+      const issues = p.error.issues
+        .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
+        .join("; ");
+      return { error: issues || "Invalid input" };
+    }
+    const gate = await requireOrgIntegrationWrite(p.data.orgSlug);
+    if (!gate.ok) return { error: gate.error };
+    const { org } = gate;
+
+    // Resolve the secret blob: keep existing if user passed null/empty,
+    // otherwise re-encrypt with the new key.
+    let secretsCiphertext: string | null | undefined;
+    if (p.data.voiceApiKey && p.data.voiceApiKey.trim().length > 0) {
+      try {
+        secretsCiphertext = encryptJSON({ apiKey: p.data.voiceApiKey.trim() });
+      } catch (e) {
+        console.error("[upsertBotVoice] encrypt failed:", e);
+        return {
+          error:
+            "Encryption is not configured on the server (ENCRYPTION_KEY missing).",
+        };
+      }
+    } else {
+      secretsCiphertext = undefined; // signal: keep existing
+    }
+
+    const [existing] = await db
+      .select({ id: botConfig.id })
+      .from(botConfig)
+      .where(eq(botConfig.organizationId, org.id))
+      .limit(1);
+
+    const baseUpdate = {
+      voiceReplyEnabled: p.data.voiceReplyEnabled,
+      voiceProvider: p.data.voiceProvider,
+      voiceVoiceId: p.data.voiceVoiceId,
+      voiceModel: p.data.voiceModel,
+      transcriptionProvider: p.data.transcriptionProvider,
+      transcriptionLanguage: p.data.transcriptionLanguage,
+      updatedAt: new Date(),
+    };
+
+    if (existing) {
+      await db
+        .update(botConfig)
+        .set(
+          secretsCiphertext === undefined
+            ? baseUpdate
+            : { ...baseUpdate, voiceSecretsCiphertext: secretsCiphertext },
+        )
+        .where(eq(botConfig.id, existing.id));
+    } else {
+      // Create a minimal bot_config row if none exists yet.
+      await db.insert(botConfig).values({
+        id: randomUUID(),
+        organizationId: org.id,
+        ...baseUpdate,
+        voiceSecretsCiphertext:
+          secretsCiphertext === undefined ? null : secretsCiphertext,
+      });
+    }
+    await invalidateBotConfigCache(org.id);
+    revalidatePath(`/app/${p.data.orgSlug}/bot`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[upsertBotVoice] failed:", e);
+    return {
+      error: e instanceof Error ? e.message : "Failed to save voice settings.",
+    };
+  }
+}
+
 export async function addFaqAction(input: {
   orgSlug: string;
   question: string;

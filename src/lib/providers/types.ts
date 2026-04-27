@@ -44,9 +44,22 @@ export type SendResult = {
   raw?: Record<string, unknown>;
 };
 
+export type SendAudioInput = {
+  toPhoneE164?: string;
+  toExternalId?: string;
+  /** Public HTTPS URL the provider can fetch (we use S3). */
+  audioUrl: string;
+};
+
 export type ChannelSender = {
   sendText(input: SendTextInput): Promise<SendResult>;
   sendTemplate?(input: SendTemplateInput): Promise<SendResult>;
+  /**
+   * Optional: send a voice / audio message. Provider expects an HTTPS URL
+   * (we upload our TTS output to S3 first). If not implemented, callers
+   * should fall back to `sendText` with the raw script.
+   */
+  sendAudio?(input: SendAudioInput): Promise<SendResult>;
   /**
    * Optional best-effort: tell the provider we've seen the inbound message
    * (drives WhatsApp's "blue ticks"). Implementations should swallow any

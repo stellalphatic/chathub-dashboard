@@ -47,14 +47,28 @@ export function getQueue<T = unknown>(name: QueueName): Queue<T> {
   return q as Queue<T>;
 }
 
+/**
+ * BullMQ rejects `:` (and a couple of other characters) inside custom
+ * `jobId`s on certain ops because the colon is its internal hash separator.
+ * We sanitize once here so callers can keep their natural `feature:scope:uuid`
+ * naming without crashing the queue.
+ */
+function sanitizeJobId(id: string | undefined): string | undefined {
+  if (!id) return id;
+  return id.replace(/[:\s/\\]/g, "_");
+}
+
 export async function enqueue<T>(
   name: QueueName,
   payload: T,
   opts?: JobsOptions & { jobId?: string },
 ) {
   const q = getQueue<T>(name);
+  const safeOpts = opts
+    ? { ...opts, jobId: sanitizeJobId(opts.jobId) }
+    : undefined;
   // BullMQ generics tie job name + data to internal Extract* helpers; we always enqueue typed payloads by queue id.
-  return (q as unknown as Queue).add(name, payload, opts);
+  return (q as unknown as Queue).add(name, payload, safeOpts);
 }
 
 /**

@@ -52,19 +52,48 @@ export default async function BotPage({
           <BotConfigForm
             orgSlug={orgSlug}
             initial={
-              cfg ?? {
-                enabled: true,
-                name: "Assistant",
-                persona: "",
-                systemPrompt: "",
-                escalationKeywords: "human,agent,representative,refund,cancel",
-                escalateOnLowConfidence: true,
-                confidenceThreshold: 55,
-                ragEnabled: false,
-                vectorStore: "qdrant",
-                temperatureX100: 30,
-                maxOutputTokens: 400,
-              }
+              cfg
+                ? {
+                    enabled: cfg.enabled,
+                    name: cfg.name,
+                    persona: cfg.persona,
+                    systemPrompt: cfg.systemPrompt,
+                    escalationKeywords: cfg.escalationKeywords,
+                    escalateOnLowConfidence: cfg.escalateOnLowConfidence,
+                    confidenceThreshold: cfg.confidenceThreshold,
+                    ragEnabled: cfg.ragEnabled,
+                    vectorStore: cfg.vectorStore,
+                    temperatureX100: cfg.temperatureX100,
+                    maxOutputTokens: cfg.maxOutputTokens,
+                    voiceReplyEnabled: cfg.voiceReplyEnabled,
+                    voiceProvider: cfg.voiceProvider,
+                    voiceVoiceId: cfg.voiceVoiceId,
+                    voiceModel: cfg.voiceModel,
+                    // Don't ship the ciphertext — only whether it exists.
+                    voiceApiKeySet: Boolean(cfg.voiceSecretsCiphertext),
+                    transcriptionProvider: cfg.transcriptionProvider,
+                    transcriptionLanguage: cfg.transcriptionLanguage,
+                  }
+                : {
+                    enabled: true,
+                    name: "Assistant",
+                    persona: "",
+                    systemPrompt: "",
+                    escalationKeywords: "human,agent,representative,refund,cancel",
+                    escalateOnLowConfidence: true,
+                    confidenceThreshold: 55,
+                    ragEnabled: false,
+                    vectorStore: "qdrant",
+                    temperatureX100: 30,
+                    maxOutputTokens: 400,
+                    voiceReplyEnabled: false,
+                    voiceProvider: "elevenlabs",
+                    voiceVoiceId: null,
+                    voiceModel: null,
+                    voiceApiKeySet: false,
+                    transcriptionProvider: "groq",
+                    transcriptionLanguage: "ur",
+                  }
             }
           />
         </CardContent>

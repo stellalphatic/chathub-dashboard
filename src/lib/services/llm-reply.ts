@@ -250,15 +250,85 @@ export async function replyToConversation(p: {
     const answer = (out.text ?? "").trim();
     if (!answer) return { status: "skipped", reason: "empty model output" };
 
-    await queueOutboundMessage(
-      {
-        organizationId: p.organizationId,
-        conversationId: p.conversationId,
-        sentByBot: true,
-        body: answer,
-      },
-      { sendNow: true },
-    );
+    // Voice reply path: ONLY when the customer's last inbound was a voice
+    // note AND the bot has voiceReplyEnabled. We try voice; on any failure
+    // we silently fall through to the text reply below so the customer is
+    // never left without a response.
+    let voiceSent = false;
+    if (lastInbound.contentType === "voice_note") {
+      try {
+        const { maybeSendVoiceReply } = await import(
+          "@/lib/services/voice-reply"
+        );
+        const r = await maybeSendVoiceReply({
+          organizationId: p.organizationId,
+          conversationId: p.conversationId,
+          text: answer,
+        });
+        if (r.ok) {
+          voiceSent = true;
+        } else {
+          console.log(
+            `[llm-reply] voice path declined (${r.reason}); falling back to text`,
+          );
+        }
+      } catch (e) {
+        console.warn(
+          "[llm-reply] voice path threw; falling back to text:",
+          (e as Error).message,
+        );
+      }
+    }
+
+    if (!voiceSent) {
+      await queueOutboundMessage(
+        {
+          organizationId: p.organizationId,
+          conversationId: p.conversationId,
+          sentByBot: true,
+          body: answer,
+        },
+        { sendNow: true },
+      );
+    }
+
+    // Best-effort: did the bot just confirm a meeting / appointment?
+    // Update the customer row + audit so CRM picks it up automatically.
+    // Wrapped in setImmediate so the reply path returns first; failures
+    // are logged but never bubble up.
+    setImmediate(() => {
+      void (async () => {
+        try {
+          const { extractBookingFromReply, persistBooking } = await import(
+            "@/lib/services/booking-extract"
+          );
+          const turns = recentHistory.map((m) => ({
+            role: (m.direction === "inbound" ? "user" : "assistant") as
+              | "user"
+              | "assistant",
+            content: m.body,
+          }));
+          turns.push({ role: "assistant", content: answer });
+          const booking = await extractBookingFromReply({
+            organizationId: p.organizationId,
+            conversationId: p.conversationId,
+            recentTurns: turns,
+            todayISO: new Date().toISOString().slice(0, 10),
+          });
+          if (booking.confirmed && cust) {
+            await persistBooking({
+              organizationId: p.organizationId,
+              conversationId: p.conversationId,
+              customerId: cust.id,
+              booking,
+            });
+          }
+        } catch (e) {
+          console.warn("[llm-reply] booking-extract failed:", (e as Error).message);
+        }
+      })();
+    });
+
     return { status: "replied" };
   } catch (e) {
     // All providers failed — hand off so the customer isn't ghosted.

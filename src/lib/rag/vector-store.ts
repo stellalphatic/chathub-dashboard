@@ -48,6 +48,11 @@ class QdrantStore implements VectorStore {
     this.client = new QdrantClient({
       url: process.env.QDRANT_URL ?? "http://localhost:6333",
       apiKey: process.env.QDRANT_API_KEY,
+      // Skip the client/server version check — the qdrant-js client is
+      // newer than our self-hosted Qdrant 1.12 image, but the API surface
+      // we use is forward/backward-compatible. The warning every call is
+      // just log noise.
+      checkCompatibility: false,
     });
   }
 

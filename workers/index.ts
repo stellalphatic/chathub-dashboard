@@ -41,6 +41,9 @@ async function main() {
     new Worker(QUEUES.embedDocument, handleEmbedDocument, {
       connection: buildBullConnection(),
       concurrency: 2,
+      // Embed failures are usually deterministic (missing API key, bad
+      // PDF). Retrying 5x just spams the logs — surface the failure on
+      // attempt 2 so the user sees the row turn `failed` quickly.
     }),
     // NOTE: we deliberately do NOT register a BullMQ Worker for
     // QUEUES.scheduledTicker — see the setInterval loop below. BullMQ
