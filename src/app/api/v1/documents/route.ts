@@ -12,6 +12,25 @@ export const dynamic = "force-dynamic";
 // Allow large-ish bodies; Next 15 caps at 1mb by default for route handlers.
 export const maxDuration = 60;
 
+function explainS3Error(code: string, raw: string): string {
+  if (/AccessDenied|403/i.test(code) || /AccessDenied|403/i.test(raw)) {
+    return "S3 denied the upload (AccessDenied). Your IAM user is missing s3:PutObject on the bucket. Attach a policy granting s3:PutObject + s3:PutObjectAcl on arn:aws:s3:::<bucket>/* and try again.";
+  }
+  if (/NoSuchBucket/i.test(code) || /NoSuchBucket/i.test(raw)) {
+    return "Bucket not found. Check the S3_BUCKET env value matches the exact name in S3 (no extra spaces, lowercase only).";
+  }
+  if (/PermanentRedirect|wrong region/i.test(raw) || /301|307/i.test(code)) {
+    return "Wrong region. The bucket exists but lives in a different region than S3_REGION. Update S3_REGION to match.";
+  }
+  if (/InvalidAccessKeyId|SignatureDoesNotMatch|InvalidArgument/i.test(raw)) {
+    return "S3 rejected the access key. Double-check S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY have no trailing newline / quotes.";
+  }
+  if (/EntityTooLarge|413/i.test(raw)) {
+    return "File rejected by S3 as too large.";
+  }
+  return `S3 upload failed (${code}). ${raw.slice(0, 200)}`;
+}
+
 /**
  * POST /api/v1/documents?orgSlug=<slug>
  *   Content-Type: multipart/form-data
@@ -76,11 +95,17 @@ export async function POST(request: Request) {
         fileUrl = res.publicUrl;
       } catch (e) {
         console.error("[documents] S3 upload failed:", e);
+        // Surface the specific S3 error code + message so the operator can
+        // fix the IAM / bucket policy without digging through CloudWatch.
+        const code =
+          (e as { Code?: string; name?: string }).Code ??
+          (e as { Code?: string; name?: string }).name ??
+          "Unknown";
+        const msg =
+          e instanceof Error ? e.message : "Unknown S3 error";
+        const friendly = explainS3Error(code, msg);
         return NextResponse.json(
-          {
-            error:
-              "Couldn't upload to storage. Check S3 credentials & bucket policy and try again.",
-          },
+          { error: friendly, code, raw: msg },
           { status: 502 },
         );
       }
