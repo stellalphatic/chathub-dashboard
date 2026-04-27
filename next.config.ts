@@ -58,6 +58,49 @@ const nextConfig: NextConfig = {
   experimental: {
     // Allow worker scripts outside /src
     externalDir: true,
+    serverActions: {
+      // Lock allowed origins so Server Actions can never be invoked
+      // cross-site. The Amplify primary domain + the chathub subdomain.
+      allowedOrigins: [
+        "dashboard.clona.site",
+        "*.amplifyapp.com",
+        "localhost:3000",
+      ],
+      bodySizeLimit: "5mb",
+    },
+  },
+  // Server-rendered admin/app pages must not be cached by CloudFront.
+  // Without this, a new deploy can leave clients holding HTML that
+  // references Server Action IDs that don't exist on the new server bundle
+  // ("Server Action … was not found"). We make every dashboard route fetch
+  // fresh HTML on every navigation.
+  async headers() {
+    return [
+      {
+        source: "/app/:path*",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, max-age=0, must-revalidate" },
+        ],
+      },
+      {
+        source: "/admin/:path*",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, max-age=0, must-revalidate" },
+        ],
+      },
+      {
+        source: "/sign-in",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, max-age=0, must-revalidate" },
+        ],
+      },
+      {
+        source: "/sign-up",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, max-age=0, must-revalidate" },
+        ],
+      },
+    ];
   },
 };
 

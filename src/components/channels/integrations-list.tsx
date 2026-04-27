@@ -11,6 +11,7 @@ import {
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { connectChannelAction } from "@/lib/org-actions";
+import { isStaleServerActionError } from "@/lib/errors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -402,23 +403,40 @@ function CredentialsForm({
           undefined;
 
         start(async () => {
-          const res = await connectChannelAction({
-            orgSlug,
-            channel: it.channel,
-            provider: it.provider,
-            label: label.trim() || it.title,
-            externalId: inferredExternalId,
-            config: cleanConfig,
-            secrets: cleanSecrets,
-          });
-          if ("error" in res) {
-            toast.error(res.error);
-          } else {
-            toast.success(`${it.title} connected.`);
-            setLabel("");
-            setExternalId("");
-            setConfig({});
-            setSecrets({});
+          try {
+            const res = await connectChannelAction({
+              orgSlug,
+              channel: it.channel,
+              provider: it.provider,
+              label: label.trim() || it.title,
+              externalId: inferredExternalId,
+              config: cleanConfig,
+              secrets: cleanSecrets,
+            });
+            if ("error" in res) {
+              toast.error(res.error);
+            } else {
+              toast.success(`${it.title} connected.`);
+              setLabel("");
+              setExternalId("");
+              setConfig({});
+              setSecrets({});
+            }
+          } catch (e) {
+            // After a redeploy the client's HTML may reference a Server
+            // Action ID that doesn't exist on the new server. Detect and
+            // hard-reload so the next click hits the new bundle.
+            if (isStaleServerActionError(e)) {
+              toast.message("Refreshing — a new version was deployed.");
+              setTimeout(() => window.location.reload(), 500);
+              return;
+            }
+            console.error("[connect-channel] failed:", e);
+            toast.error(
+              e instanceof Error
+                ? e.message
+                : "Couldn't save the connection. Try again.",
+            );
           }
         });
       }}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { isStaleServerActionError } from "@/lib/errors";
 
 export default function AdminError({
   error,
@@ -15,6 +16,18 @@ export default function AdminError({
 }) {
   useEffect(() => {
     console.error("[admin/error]", error);
+    if (isStaleServerActionError(error)) {
+      const flag = "chathub:server-action-reload";
+      try {
+        const last = Number(sessionStorage.getItem(flag) ?? "0");
+        if (Date.now() - last > 5_000) {
+          sessionStorage.setItem(flag, String(Date.now()));
+          window.location.reload();
+        }
+      } catch {
+        window.location.reload();
+      }
+    }
   }, [error]);
 
   return (

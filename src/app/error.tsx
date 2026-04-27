@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
+import { isStaleServerActionError } from "@/lib/errors";
 
 export default function ErrorPage({
   error,
@@ -12,6 +13,18 @@ export default function ErrorPage({
 }) {
   useEffect(() => {
     console.error(error);
+    if (isStaleServerActionError(error)) {
+      const flag = "chathub:server-action-reload";
+      try {
+        const last = Number(sessionStorage.getItem(flag) ?? "0");
+        if (Date.now() - last > 5_000) {
+          sessionStorage.setItem(flag, String(Date.now()));
+          window.location.reload();
+        }
+      } catch {
+        window.location.reload();
+      }
+    }
   }, [error]);
 
   return (
