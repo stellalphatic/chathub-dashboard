@@ -47,4 +47,16 @@ export type SendResult = {
 export type ChannelSender = {
   sendText(input: SendTextInput): Promise<SendResult>;
   sendTemplate?(input: SendTemplateInput): Promise<SendResult>;
+  /**
+   * Optional best-effort: tell the provider we've seen the inbound message
+   * (drives WhatsApp's "blue ticks"). Implementations should swallow any
+   * errors so a failed mark-as-read never breaks the reply flow.
+   */
+  markAsRead?(externalMessageId: string): Promise<void>;
+  /**
+   * Optional best-effort: show "typing…" to the customer for the next ~25s
+   * so they see the AI is composing. Provider-specific; safely no-ops if
+   * not supported.
+   */
+  showTyping?(externalMessageId: string): Promise<void>;
 };

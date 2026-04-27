@@ -289,6 +289,9 @@ export const message = pgTable(
     providerMessageId: text("provider_message_id"),
     sentiment: text("sentiment"), // positive|negative|neutral
     rawPayload: jsonb("raw_payload").$type<Record<string, unknown>>(),
+    // For the inbound reconciliation pass — set once an LLM reply has been
+    // (re-)scheduled. Null means "still might need a reply".
+    inboundReconciledAt: timestamp("inbound_reconciled_at", { mode: "date" }),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   },
   (t) => ({

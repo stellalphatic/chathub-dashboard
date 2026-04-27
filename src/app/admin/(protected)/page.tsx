@@ -18,6 +18,9 @@ import {
   Users,
   Zap,
 } from "lucide-react";
+import { asc, desc } from "drizzle-orm";
+import { db } from "@/db";
+import { organization } from "@/db/schema";
 import { getAdminPlatformStats, type AdminPlatformStats, type OrgStatRow } from "@/app/admin/stats";
 
 // Admin overview is always live data — don't prerender or cache at build time.
@@ -31,12 +34,14 @@ async function safeGetAdminPlatformStats(): Promise<
   try {
     // Fail fast if Supabase is slow — prevents the Lambda from hitting its
     // 30s timeout and nuking the whole page with "took too long to respond".
+    // 12s is enough headroom for healthy Supabase, fast-fails on unhealthy
+    // so the page shows the simple businesses fallback instead.
     const data = await Promise.race([
       getAdminPlatformStats(),
       new Promise<never>((_, reject) =>
         setTimeout(
-          () => reject(new Error("stats query timed out after 20s")),
-          20_000,
+          () => reject(new Error("stats query timed out after 12s")),
+          12_000,
         ),
       ),
     ]);
@@ -138,22 +143,50 @@ function AdminOverviewSkeleton() {
 }
 
 async function AdminOverviewData() {
+  // Always load the fast businesses list FIRST. This is a single SELECT and
+  // never times out, so admins can always see + click into orgs even when
+  // the heavy analytics query is slow.
+  const orgs = await db
+    .select({
+      id: organization.id,
+      name: organization.name,
+      slug: organization.slug,
+      createdAt: organization.createdAt,
+    })
+    .from(organization)
+    .orderBy(asc(organization.name));
+  void desc;
+
   const res = await safeGetAdminPlatformStats();
   if (!res.ok) {
     return (
-      <Card>
-        <CardContent className="space-y-2 p-6">
-          <p className="text-sm font-medium text-rose-500">Failed to load stats</p>
-          <p className="font-mono text-xs text-[rgb(var(--fg-muted))]">
-            {res.error}
-          </p>
-          <p className="text-xs text-[rgb(var(--fg-subtle))]">
-            The admin shell stays usable even when analytics fail. Check your
-            Supabase status and refresh. You can still manage businesses from
-            the nav above.
-          </p>
-        </CardContent>
-      </Card>
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="flex flex-col gap-2 p-5 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-amber-500">
+                Live analytics couldn&apos;t load
+              </p>
+              <p className="mt-1 font-mono text-xs text-[rgb(var(--fg-muted))]">
+                {res.error}
+              </p>
+              <p className="mt-1 text-xs text-[rgb(var(--fg-subtle))]">
+                Per-business stats are temporarily off; the businesses list
+                below still works. Refresh in a moment to retry.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <SimpleOrgList
+          orgs={orgs.map((o) => ({
+            id: o.id,
+            name: o.name,
+            slug: o.slug,
+            createdAt: o.createdAt.toISOString(),
+          }))}
+        />
+      </div>
     );
   }
   const stats = res.data;
@@ -580,6 +613,66 @@ function MiniStat({
           {trend}%
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function SimpleOrgList({
+  orgs,
+}: {
+  orgs: { id: string; name: string; slug: string; createdAt: string }[];
+}) {
+  return (
+    <div>
+      <div className="mb-3 flex items-end justify-between">
+        <h2 className="text-lg font-semibold tracking-tight">
+          Businesses ({orgs.length})
+        </h2>
+        <p className="text-xs text-[rgb(var(--fg-subtle))]">
+          Sorted alphabetically
+        </p>
+      </div>
+      {orgs.length === 0 ? (
+        <Card>
+          <CardContent className="p-10 text-center">
+            <Building2 className="mx-auto h-8 w-8 text-[rgb(var(--fg-subtle))]" />
+            <p className="mt-3 text-sm font-medium">No businesses yet</p>
+            <p className="mt-1 text-xs text-[rgb(var(--fg-subtle))]">
+              Click &ldquo;New business&rdquo; above to add one.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {orgs.map((o) => (
+            <Card key={o.id} className="card-hover">
+              <CardContent className="flex items-center justify-between gap-3 p-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[rgb(var(--accent)/0.12)] text-[rgb(var(--accent))]">
+                    <Building2 className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <Link
+                      href={`/admin/organizations/${o.id}`}
+                      className="block truncate text-sm font-semibold hover:text-[rgb(var(--accent))]"
+                    >
+                      {o.name}
+                    </Link>
+                    <p className="truncate font-mono text-[10.5px] text-[rgb(var(--fg-subtle))]">
+                      {o.slug}
+                    </p>
+                  </div>
+                </div>
+                <Button asChild size="sm" variant="ghost">
+                  <Link href={`/admin/organizations/${o.id}`}>
+                    Manage <ArrowRight className="h-3 w-3" />
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

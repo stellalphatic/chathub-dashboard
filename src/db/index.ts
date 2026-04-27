@@ -42,7 +42,21 @@ function initDb(): DrizzleInstance {
   // `prepare: false` keeps us compatible with Supabase's transaction pooler
   // (pgbouncer). postgres-js also enables this when the URL has ?pgbouncer=true,
   // but being explicit doesn't hurt.
-  const client = postgres(url, { max: 10, prepare: false });
+  //
+  // `max` is intentionally low (5) for serverless: every Amplify Lambda cold
+  // start opens a fresh pool, and Supabase's transaction pooler caps total
+  // pool slots aggressively. With max: 10 several concurrent cold starts
+  // would queue against the pooler and the page would time out.
+  // EC2 workers can override via DB_POOL_MAX (long-running, fewer instances).
+  const max = Number(process.env.DB_POOL_MAX ?? "5") || 5;
+  const idle_timeout = Number(process.env.DB_IDLE_TIMEOUT ?? "20") || 20;
+  const connect_timeout = Number(process.env.DB_CONNECT_TIMEOUT ?? "10") || 10;
+  const client = postgres(url, {
+    max,
+    prepare: false,
+    idle_timeout,
+    connect_timeout,
+  });
   return drizzle(client, { schema });
 }
 

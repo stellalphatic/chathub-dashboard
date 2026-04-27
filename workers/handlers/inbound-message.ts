@@ -11,6 +11,7 @@ import { db } from "../../src/db";
 import { eq } from "drizzle-orm";
 import { conversation, message } from "../../src/db/schema";
 import { isS3Configured } from "../../src/lib/media/s3";
+import { loadChannelConnection } from "../../src/lib/providers/sender-factory";
 import { orgLlmRateLimit } from "../../src/lib/rate-limit";
 
 /**
@@ -41,6 +42,24 @@ export async function handleInboundMessage(job: Job<InboundMessageJob>) {
     return;
   }
   if (!row.conversationId) return;
+
+  // Best-effort: drive WhatsApp blue ticks + typing indicator immediately
+  // so the customer sees activity while we generate the reply. Both are
+  // wrapped so failures here NEVER block reply generation.
+  if (p.channel === "whatsapp" && p.externalMessageId) {
+    void (async () => {
+      try {
+        const conn = await loadChannelConnection(p.channelConnectionId);
+        await conn.sender.markAsRead?.(p.externalMessageId);
+        await conn.sender.showTyping?.(p.externalMessageId);
+      } catch (e) {
+        console.warn(
+          "[inbound] markAsRead/typing failed:",
+          (e as Error).message,
+        );
+      }
+    })();
+  }
 
   // Mirror provider CDN media to our S3 bucket (fire-and-forget — retries via BullMQ).
   if (row.mediaUrl && isS3Configured()) {
@@ -93,4 +112,10 @@ export async function handleInboundMessage(job: Job<InboundMessageJob>) {
     triggeringMessageId: row.id,
   };
   await enqueue(QUEUES.llmReply, j, { jobId: `llm:${row.id}` });
+
+  // Stamp so the reconciliation pass knows this message was already routed.
+  await db
+    .update(message)
+    .set({ inboundReconciledAt: new Date() })
+    .where(eq(message.id, row.id));
 }

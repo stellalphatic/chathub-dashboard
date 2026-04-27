@@ -193,14 +193,21 @@ export async function getAdminPlatformStats(): Promise<AdminPlatformStats> {
       .from(llmUsage)
       .where(gte(llmUsage.createdAt, since24h))
       .groupBy(llmUsage.organizationId),
-    // Raw createdAt + direction — bucket in JS to avoid tricky GROUP BY on SQL expressions.
+    // Aggregate volume by day + direction in SQL so we ship just ~14 rows
+    // back instead of every message from the past week. `date_trunc` is on
+    // the column reference (not a JS Date) so postgres-js is happy.
     db
       .select({
-        createdAt: message.createdAt,
+        day: sql<Date>`date_trunc('day', ${message.createdAt})`.as("day"),
         direction: message.direction,
+        n: count(),
       })
       .from(message)
-      .where(gte(message.createdAt, since7d)),
+      .where(gte(message.createdAt, since7d))
+      .groupBy(
+        sql`date_trunc('day', ${message.createdAt})`,
+        message.direction,
+      ),
   ])) as PromiseSettledResult<unknown>[];
 
   type OrgsRow = {
@@ -224,7 +231,7 @@ export async function getAdminPlatformStats(): Promise<AdminPlatformStats> {
     tokens: number;
     fails: number;
   };
-  type VolRow = { createdAt: Date; direction: string };
+  type VolRow = { day: Date; direction: string; n: number };
 
   const orgs = unwrap<OrgsRow[]>(settled, 0, [], "orgs");
   const customerRows = unwrap<CustRow[]>(settled, 1, [], "customers");
@@ -328,11 +335,12 @@ export async function getAdminPlatformStats(): Promise<AdminPlatformStats> {
     volumeByDay.set(dayKey(d), { inbound: 0, outbound: 0 });
   }
   for (const r of volumeRows) {
-    const d = r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt);
+    const d = r.day instanceof Date ? r.day : new Date(r.day);
     const key = dayKey(d);
     const cur = volumeByDay.get(key) ?? { inbound: 0, outbound: 0 };
-    if (r.direction === "inbound") cur.inbound += 1;
-    else if (r.direction === "outbound") cur.outbound += 1;
+    const n = Number(r.n);
+    if (r.direction === "inbound") cur.inbound += n;
+    else if (r.direction === "outbound") cur.outbound += n;
     volumeByDay.set(key, cur);
   }
 

@@ -54,6 +54,42 @@ export function createYCloudSender(
   }
 
   return {
+    /**
+     * Mark an inbound message as read on WhatsApp (drives blue ticks).
+     * YCloud follows Meta's Cloud API: POST /messages with status:"read".
+     * Best-effort — failures are logged but never thrown.
+     */
+    async markAsRead(externalMessageId: string): Promise<void> {
+      if (!externalMessageId) return;
+      try {
+        await post("/whatsapp/messages", {
+          status: "read",
+          messageId: externalMessageId,
+        });
+      } catch (e) {
+        console.warn("[ycloud markAsRead] failed:", (e as Error).message);
+      }
+    },
+
+    /**
+     * Show "typing…" indicator. WhatsApp Cloud API added typing indicators
+     * in 2024 — YCloud may or may not pass them through. Best-effort: we
+     * try, log on failure, and never throw.
+     */
+    async showTyping(externalMessageId: string): Promise<void> {
+      if (!externalMessageId) return;
+      try {
+        await post("/whatsapp/messages", {
+          status: "read",
+          messageId: externalMessageId,
+          typingIndicator: { type: "text" },
+        });
+      } catch (e) {
+        // Typing isn't broadly supported — silent fallback.
+        console.warn("[ycloud showTyping] failed:", (e as Error).message);
+      }
+    },
+
     async sendText(input: SendTextInput): Promise<SendResult> {
       if (!input.toPhoneE164) {
         throw new Error("ycloud sendText requires toPhoneE164");
