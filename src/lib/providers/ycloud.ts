@@ -215,7 +215,23 @@ function extractProfileName(
 
 /**
  * Normalize a YCloud webhook payload to our common format.
- * YCloud forwards Meta's WhatsApp Cloud API events almost verbatim.
+ *
+ * YCloud has shipped THREE webhook shapes over time. We handle all of them:
+ *
+ *   1) Modern (current):
+ *        { type: "whatsapp.message.received" | "whatsapp.message.updated",
+ *          whatsappMessage: {...} }
+ *      `whatsappMessage` is used for BOTH inbound AND outbound status events.
+ *      We only ingest when status is missing or `received` — status updates
+ *      (sent / delivered / read / failed) are forwarded to providerMessageId
+ *      tracking instead.
+ *
+ *   2) Older inbound:
+ *        { type: "whatsapp.inbound_message.received",
+ *          whatsappInboundMessage: {...} }
+ *
+ *   3) Raw Meta-passthrough:
+ *        { entry: [{ changes: [{ value: { messages: [...] } }] }] }
  */
 export function normalizeYCloudInbound(
   payload: Record<string, unknown>,
@@ -223,27 +239,51 @@ export function normalizeYCloudInbound(
   const out: NormalizedInboundMessage[] = [];
   const now = Date.now();
 
-  // Event shape 1: { event: "whatsapp.inbound_message.received", whatsappInboundMessage: {...} }
-  const ev = payload["whatsappInboundMessage"] as
-    | Record<string, unknown>
-    | undefined;
-  if (ev) {
+  // Helper to extract a single message from a YCloud "inner event" object.
+  // Returns the normalized message or null if it's something we shouldn't
+  // ingest (e.g. an outbound status update).
+  function fromInnerEvent(
+    ev: Record<string, unknown>,
+  ): NormalizedInboundMessage | null {
+    // Status updates: { status: "sent" | "delivered" | "read" | "failed" }
+    // YCloud reuses `whatsappMessage` for these; they're not new inbound.
+    const status = ev["status"];
+    if (
+      typeof status === "string" &&
+      ["sent", "delivered", "read", "failed"].includes(status)
+    ) {
+      return null;
+    }
     const from = String(ev["from"] ?? "");
     const id = String(ev["id"] ?? ev["wamid"] ?? "");
     const typeRaw = String(ev["type"] ?? "text");
     const fromName = extractProfileName(payload, ev);
-    const phoneNumberId = String(ev["phoneNumberId"] ?? "");
+    const phoneNumberId = String(
+      ev["phoneNumberId"] ?? ev["wabaPhoneNumberId"] ?? "",
+    );
     const body =
       typeRaw === "text"
         ? String((ev["text"] as { body?: string } | undefined)?.body ?? "")
-        : "";
+        : typeRaw === "interactive"
+          ? extractInteractiveText(ev["interactive"])
+          : "";
     const media =
-      typeRaw === "audio" || typeRaw === "image" || typeRaw === "video" || typeRaw === "document"
-        ? (ev[typeRaw] as { link?: string; mime_type?: string } | undefined)
+      typeRaw === "audio" ||
+      typeRaw === "image" ||
+      typeRaw === "video" ||
+      typeRaw === "document" ||
+      typeRaw === "voice"
+        ? (ev[typeRaw === "voice" ? "audio" : typeRaw] as
+            | { link?: string; mime_type?: string; mimeType?: string }
+            | undefined)
         : undefined;
     const contentType =
-      typeRaw === "audio" || typeRaw === "voice" ? "voice_note" : (typeRaw as NormalizedInboundMessage["contentType"]);
-    out.push({
+      typeRaw === "audio" || typeRaw === "voice"
+        ? "voice_note"
+        : (typeRaw as NormalizedInboundMessage["contentType"]);
+
+    if (!from) return null;
+    return {
       provider: "ycloud",
       channel: "whatsapp",
       externalMessageId: id || `yc-${now}-${Math.random()}`,
@@ -252,11 +292,30 @@ export function normalizeYCloudInbound(
       contentType,
       body,
       mediaUrl: media?.link,
-      mediaMimeType: media?.mime_type,
+      mediaMimeType: media?.mime_type ?? media?.mimeType,
       receivedAt: now,
       channelExternalId: phoneNumberId,
       raw: ev,
-    });
+    };
+  }
+
+  // --- Shape 1 (current): { type:"whatsapp.message.received", whatsappMessage:{...} }
+  const evNew = payload["whatsappMessage"] as
+    | Record<string, unknown>
+    | undefined;
+  if (evNew) {
+    const m = fromInnerEvent(evNew);
+    if (m) out.push(m);
+    return out;
+  }
+
+  // --- Shape 2 (older): whatsappInboundMessage
+  const ev = payload["whatsappInboundMessage"] as
+    | Record<string, unknown>
+    | undefined;
+  if (ev) {
+    const m = fromInnerEvent(ev);
+    if (m) out.push(m);
     return out;
   }
 
@@ -317,4 +376,19 @@ export function normalizeYCloudInbound(
   }
 
   return out;
+}
+
+/** Pulls a usable text out of WhatsApp interactive replies (button / list). */
+function extractInteractiveText(interactive: unknown): string {
+  if (!interactive || typeof interactive !== "object") return "";
+  const i = interactive as {
+    button_reply?: { title?: string };
+    list_reply?: { title?: string };
+    type?: string;
+  };
+  return (
+    i.button_reply?.title ??
+    i.list_reply?.title ??
+    ""
+  );
 }

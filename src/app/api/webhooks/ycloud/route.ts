@@ -33,12 +33,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
 
-  // Lightweight debug log — first 1000 chars of the raw payload so we can see
-  // exactly what YCloud is sending in CloudWatch (helps debug missing
-  // profile.name etc.). Truncated to avoid noisy logs on big media events.
+  // Lightweight debug log — type, top-level keys, first 1000 chars of
+  // payload. Status updates are common and we don't ingest them, so we
+  // tag the log with `inbound=true|false` to make CloudWatch readable.
+  const evType = String(payload["type"] ?? "");
+  const inner = (payload["whatsappMessage"] ?? payload["whatsappInboundMessage"]) as
+    | Record<string, unknown>
+    | undefined;
+  const status = inner ? String(inner["status"] ?? "") : "";
+  const isStatusUpdate =
+    evType.endsWith(".updated") ||
+    ["sent", "delivered", "read", "failed"].includes(status);
   console.log(
-    "[ycloud webhook] payload",
-    raw.length > 1000 ? raw.slice(0, 1000) + "…" : raw,
+    `[ycloud webhook] type=${evType} status=${status || "-"} inbound=${!isStatusUpdate}`,
+    raw.length > 1500 ? raw.slice(0, 1500) + "…" : raw,
   );
 
   const messages = normalizeYCloudInbound(payload);

@@ -58,20 +58,34 @@ export async function enqueue<T>(
 }
 
 /**
- * Best-effort enqueue. If Redis is unreachable (worker box down, network
- * blip, security group misconfigured) we **don't** want a UI submit to fail
- * — the row is already in Postgres and the worker will pick it up next time
- * it can talk to Redis.
+ * Best-effort enqueue with a hard timeout (3s by default).
  *
- * Logs the failure so it's visible in CloudWatch, returns null on error.
+ * Three failure modes we have to survive:
+ *   1. Redis unreachable: ioredis retries quietly until the Lambda hits its
+ *      30s timeout. Without a timeout here, every webhook would time out.
+ *   2. Redis URL misconfigured: we still want to write the DB row and let
+ *      the worker reconcile.
+ *   3. Network blip mid-add: same — log and move on.
+ *
+ * The reconciliation pass on the worker (every 5s) will pick up any
+ * orphaned rows automatically.
  */
 export async function safeEnqueue<T>(
   name: QueueName,
   payload: T,
-  opts?: JobsOptions & { jobId?: string },
+  opts?: JobsOptions & { jobId?: string; timeoutMs?: number },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const timeoutMs = opts?.timeoutMs ?? 3_000;
   try {
-    await enqueue(name, payload, opts);
+    await Promise.race([
+      enqueue(name, payload, opts),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`enqueue ${name} timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        ),
+      ),
+    ]);
     return { ok: true };
   } catch (e) {
     console.warn(

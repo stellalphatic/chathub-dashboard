@@ -1,3 +1,4 @@
+import { reconcilePendingDocuments } from "../../src/lib/services/document-reconcile";
 import { reconcileInboundReplies } from "../../src/lib/services/inbound-reconcile";
 import {
   releaseStaleLocks,
@@ -8,15 +9,19 @@ export async function handleScheduledTicker() {
   await releaseStaleLocks();
   const scheduled = await tickScheduled(100);
 
-  // Self-healing: catch any inbound bot-mode messages whose LLM reply
-  // never got enqueued (e.g. transient Redis blip from the webhook side).
-  // Cheap when the queue is healthy — just runs once and finds zero rows.
-  let reconciled = { found: 0, enqueued: 0 };
+  // Self-healing on every minute tick: catch inbound replies + pending
+  // documents that never got their job enqueued. Cheap when healthy.
+  const reconcileResults = { messages: { found: 0, enqueued: 0 }, docs: { found: 0, enqueued: 0 } };
   try {
-    reconciled = await reconcileInboundReplies(50);
+    reconcileResults.messages = await reconcileInboundReplies(50);
   } catch (e) {
-    console.warn("[scheduled-ticker] reconcile failed:", e);
+    console.warn("[scheduled-ticker] message reconcile failed:", e);
+  }
+  try {
+    reconcileResults.docs = await reconcilePendingDocuments(25);
+  } catch (e) {
+    console.warn("[scheduled-ticker] doc reconcile failed:", e);
   }
 
-  return { ...scheduled, reconciled };
+  return { ...scheduled, ...reconcileResults };
 }
