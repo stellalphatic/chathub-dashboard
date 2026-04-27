@@ -24,6 +24,7 @@ import { getOrgAccess } from "@/lib/org-access";
 import {
   enqueue,
   QUEUES,
+  safeEnqueue,
   type BroadcastRunnerJob,
   type EmbedDocumentJob,
   type OutboundSendJob,
@@ -293,28 +294,47 @@ const connectChannelSchema = z.object({
 export async function connectChannelAction(
   raw: z.infer<typeof connectChannelSchema>,
 ): Promise<{ ok: true; id: string } | { error: string }> {
-  const p = connectChannelSchema.safeParse(raw);
-  if (!p.success) {
-    return { error: p.error.issues.map((i) => i.message).join(", ") };
-  }
-  const gate = await requireOrgIntegrationWrite(p.data.orgSlug);
-  if (!gate.ok) return { error: gate.error };
-  const { org } = gate;
+  try {
+    const p = connectChannelSchema.safeParse(raw);
+    if (!p.success) {
+      return { error: p.error.issues.map((i) => i.message).join(", ") };
+    }
+    const gate = await requireOrgIntegrationWrite(p.data.orgSlug);
+    if (!gate.ok) return { error: gate.error };
+    const { org } = gate;
 
-  const id = randomUUID();
-  await db.insert(channelConnection).values({
-    id,
-    organizationId: org.id,
-    channel: p.data.channel,
-    provider: p.data.provider,
-    label: p.data.label ?? null,
-    externalId: p.data.externalId ?? null,
-    config: p.data.config,
-    secretsCiphertext: encryptJSON(p.data.secrets),
-    webhookSecret: randomBytes(24).toString("hex"),
-  });
-  revalidatePath(`/app/${p.data.orgSlug}/channels`);
-  return { ok: true, id };
+    let secretsCiphertext: string;
+    try {
+      secretsCiphertext = encryptJSON(p.data.secrets);
+    } catch (e) {
+      console.error("[connectChannel] encrypt failed:", e);
+      return {
+        error:
+          "Encryption is not configured on the server (ENCRYPTION_KEY missing). Ask your platform admin to set it.",
+      };
+    }
+
+    const id = randomUUID();
+    await db.insert(channelConnection).values({
+      id,
+      organizationId: org.id,
+      channel: p.data.channel,
+      provider: p.data.provider,
+      label: p.data.label ?? null,
+      externalId: p.data.externalId ?? null,
+      config: p.data.config,
+      secretsCiphertext,
+      webhookSecret: randomBytes(24).toString("hex"),
+    });
+    revalidatePath(`/app/${p.data.orgSlug}/channels`);
+    return { ok: true, id };
+  } catch (e) {
+    console.error("[connectChannel] failed:", e);
+    return {
+      error:
+        e instanceof Error ? e.message : "Failed to save channel connection.",
+    };
+  }
 }
 
 export async function deleteChannelAction(input: {
@@ -481,7 +501,9 @@ export async function createDocumentFromTextAction(input: {
     organizationId: org.id,
     documentId: id,
   };
-  await enqueue(QUEUES.embedDocument, job, { jobId: `doc:${id}` });
+  // Best-effort: if Redis is down the doc row is already saved as `pending` —
+  // the worker will scan and pick it up on the next tick anyway.
+  await safeEnqueue(QUEUES.embedDocument, job, { jobId: `doc:${id}` });
   revalidatePath(`/app/${input.orgSlug}/knowledge`);
   return { ok: true, id };
 }

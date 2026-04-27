@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 import { normalizeManyChatInbound } from "@/lib/providers/manychat";
-import { enqueue, QUEUES, type InboundMessageJob } from "@/lib/queue";
+import { QUEUES, safeEnqueue, type InboundMessageJob } from "@/lib/queue";
 import { ingestInboundMessage } from "@/lib/services/inbound";
 
 export const runtime = "nodejs";
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
         raw: m.raw,
         receivedAt: m.receivedAt,
       };
-      await enqueue(QUEUES.inboundMessage, job, {
+      await safeEnqueue(QUEUES.inboundMessage, job, {
         jobId: `in:${m.provider}:${m.externalMessageId}`,
       });
       enqueued++;

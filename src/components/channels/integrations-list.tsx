@@ -356,20 +356,60 @@ function CredentialsForm({
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [pending, start] = useTransition();
 
+  function isRequired(field: { required?: boolean }): boolean {
+    return field.required !== false;
+  }
+
+  function findMissingField(): string | null {
+    if (it.externalIdField && isRequired(it.externalIdField) && !externalId.trim()) {
+      return it.externalIdField.label;
+    }
+    for (const f of it.configFields) {
+      if (isRequired(f) && !(config[f.key] ?? "").trim()) return f.label;
+    }
+    for (const f of it.secretFields) {
+      if (isRequired(f) && !(secrets[f.key] ?? "").trim()) return f.label;
+    }
+    return null;
+  }
+
   return (
     <form
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
+        const missing = findMissingField();
+        if (missing) {
+          toast.error(`${missing} is required.`);
+          return;
+        }
+
+        // Trim everything before sending. Whitespace in API keys is the #1
+        // cause of "invalid auth" on first connect.
+        const cleanSecrets: Record<string, string> = {};
+        for (const [k, v] of Object.entries(secrets)) cleanSecrets[k] = v.trim();
+        const cleanConfig: Record<string, string> = {};
+        for (const [k, v] of Object.entries(config)) cleanConfig[k] = v.trim();
+
+        // For YCloud (and similar 1-number setups) we auto-route inbound
+        // webhooks by setting externalId = the sender phone if the user
+        // didn't provide a separate Phone Number ID.
+        const inferredExternalId =
+          externalId.trim() ||
+          cleanConfig.fromPhoneE164 ||
+          cleanConfig.pageId ||
+          cleanConfig.igUserId ||
+          undefined;
+
         start(async () => {
           const res = await connectChannelAction({
             orgSlug,
             channel: it.channel,
             provider: it.provider,
-            label: label || it.title,
-            externalId: externalId || undefined,
-            config,
-            secrets,
+            label: label.trim() || it.title,
+            externalId: inferredExternalId,
+            config: cleanConfig,
+            secrets: cleanSecrets,
           });
           if ("error" in res) {
             toast.error(res.error);
@@ -383,27 +423,37 @@ function CredentialsForm({
         });
       }}
     >
-      <div>
-        <Label>Internal label</Label>
-        <Input
-          className="mt-1"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder={it.title}
-        />
-        <p className="mt-1 text-[11px] text-[rgb(var(--fg-subtle))]">
-          Shown on the Channels list. Defaults to the integration name.
-        </p>
-      </div>
+      {!it.hideLabelField ? (
+        <div>
+          <Label>Internal label (optional)</Label>
+          <Input
+            className="mt-1"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder={it.title}
+          />
+          <p className="mt-1 text-[11px] text-[rgb(var(--fg-subtle))]">
+            Shown on the Channels list. Defaults to the integration name.
+          </p>
+        </div>
+      ) : null}
 
       {it.externalIdField ? (
         <div>
-          <Label>{it.externalIdField.label}</Label>
+          <Label>
+            {it.externalIdField.label}
+            {!isRequired(it.externalIdField) ? (
+              <span className="ml-1 text-[11px] font-normal text-[rgb(var(--fg-subtle))]">
+                (optional)
+              </span>
+            ) : null}
+          </Label>
           <Input
             className="mt-1 font-mono text-xs"
             value={externalId}
             placeholder={it.externalIdField.placeholder}
             onChange={(e) => setExternalId(e.target.value)}
+            required={isRequired(it.externalIdField)}
           />
           {it.externalIdField.help ? (
             <p className="mt-1 text-[11px] text-[rgb(var(--fg-subtle))]">
@@ -417,7 +467,14 @@ function CredentialsForm({
         <div className="space-y-3">
           {it.configFields.map((f) => (
             <div key={f.key}>
-              <Label>{f.label}</Label>
+              <Label>
+                {f.label}
+                {!isRequired(f) ? (
+                  <span className="ml-1 text-[11px] font-normal text-[rgb(var(--fg-subtle))]">
+                    (optional)
+                  </span>
+                ) : null}
+              </Label>
               <Input
                 className="mt-1"
                 value={config[f.key] ?? ""}
@@ -425,6 +482,7 @@ function CredentialsForm({
                 onChange={(e) =>
                   setConfig((p) => ({ ...p, [f.key]: e.target.value }))
                 }
+                required={isRequired(f)}
               />
               {f.help ? (
                 <p className="mt-1 text-[11px] text-[rgb(var(--fg-subtle))]">
@@ -442,7 +500,14 @@ function CredentialsForm({
         </p>
         {it.secretFields.map((f) => (
           <div key={f.key}>
-            <Label>{f.label}</Label>
+            <Label>
+              {f.label}
+              {!isRequired(f) ? (
+                <span className="ml-1 text-[11px] font-normal text-[rgb(var(--fg-subtle))]">
+                  (optional)
+                </span>
+              ) : null}
+            </Label>
             <Input
               className="mt-1 font-mono text-xs"
               type={f.type ?? "password"}
@@ -451,6 +516,8 @@ function CredentialsForm({
               onChange={(e) =>
                 setSecrets((p) => ({ ...p, [f.key]: e.target.value }))
               }
+              autoComplete="off"
+              required={isRequired(f)}
             />
             {f.help ? (
               <p className="mt-1 text-[11px] text-[rgb(var(--fg-subtle))]">

@@ -7,6 +7,8 @@ export type IntegrationField = {
   type?: "text" | "password";
   placeholder?: string;
   help?: string;
+  /** When true, the form will refuse to submit without a value. Defaults to true. */
+  required?: boolean;
 };
 
 export type IntegrationStep = {
@@ -31,7 +33,15 @@ export type Integration = {
   steps: IntegrationStep[];
   configFields: IntegrationField[];
   secretFields: IntegrationField[];
-  externalIdField?: { label: string; placeholder?: string; help?: string };
+  externalIdField?: {
+    label: string;
+    placeholder?: string;
+    help?: string;
+    /** Hide unless explicitly required for multi-tenant routing. Defaults to true. */
+    required?: boolean;
+  };
+  /** When true, hide the "Internal label" field — most setups don't need it. */
+  hideLabelField?: boolean;
   docsUrl?: string;
 };
 
@@ -56,45 +66,39 @@ export const INTEGRATIONS: Integration[] = [
     recommended: true,
     webhookPath: "/api/webhooks/ycloud",
     webhookHelp:
-      "YCloud signs each webhook with HMAC-SHA256. Set the same secret here and in YCloud.",
+      "Paste this URL in YCloud → WhatsApp → Webhooks. ChatHub verifies the signature using the YCLOUD_WEBHOOK_SECRET server env.",
     docsUrl: "https://www.ycloud.com/docs",
+    hideLabelField: true,
     steps: [
       {
-        title: "Create a YCloud account",
-        body: "Sign up at ycloud.com and complete KYC — this unlocks WhatsApp Business API access.",
+        title: "Create a YCloud account & verify your number",
+        body: "Sign up at ycloud.com, complete KYC, then add the WhatsApp Business number. Once verified, copy it in E.164 format (e.g. +14151234567).",
         links: [{ label: "YCloud signup", href: "https://www.ycloud.com" }],
       },
       {
-        title: "Add a phone number and register it for WhatsApp",
-        body: "In YCloud → WhatsApp → Phone Numbers → Add. Follow the verification prompts. Note the Phone Number ID — you'll paste it in the Credentials tab.",
-      },
-      {
         title: "Copy your YCloud API key",
-        body: "YCloud dashboard → Settings → API keys → Create. This key lets ChatHub send messages on your behalf.",
+        body: "YCloud dashboard → Settings → API keys → Create. This key lets ChatHub send messages on your behalf — keep it secret.",
       },
       {
-        title: "Add the webhook URL below to YCloud",
-        body: "YCloud → WhatsApp → Webhooks → Add a new endpoint. Paste the URL shown above. Tick Inbound Messages, Status Updates, and Conversation events.",
-      },
-      {
-        title: "Generate and paste the webhook signing secret",
-        body: "YCloud webhook page → copy the signing secret. Paste it in the YCLOUD_WEBHOOK_SECRET server env var (ChatHub verifies every request).",
+        title: "Add the webhook URL above to YCloud",
+        body: "YCloud → WhatsApp → Webhooks → Add a new endpoint. Paste the URL shown above. Tick Inbound Messages and Status Updates.",
       },
       {
         title: "Save credentials below",
-        body: "Enter the API key, Phone Number ID, and your sender phone in E.164 format. Hit Save & connect. You'll show as Connected in a moment.",
+        body: "Enter your sender phone (E.164) and your YCloud API key, then hit Save & connect. You'll show as Connected in a moment.",
       },
       {
         title: "Test it",
-        body: "Send a message from a personal phone to the business number. It should appear in ChatHub → Inbox within 1–2 seconds, and the AI will reply if enabled.",
+        body: "Send a WhatsApp message from a personal phone to the business number. It should appear in ChatHub → Inbox within 1–2 seconds, and the AI will reply if enabled.",
       },
     ],
     configFields: [
       {
         key: "fromPhoneE164",
-        label: "Sender phone (E.164)",
+        label: "WhatsApp business phone",
         placeholder: "+14151234567",
-        help: "The WhatsApp Business number registered with YCloud.",
+        help: "Your WhatsApp Business number in E.164 format (with country code).",
+        required: true,
       },
     ],
     secretFields: [
@@ -103,18 +107,11 @@ export const INTEGRATIONS: Integration[] = [
         label: "YCloud API key",
         type: "password",
         placeholder: "yc_live_xxx",
-      },
-      {
-        key: "wabaId",
-        label: "WABA ID (optional)",
-        placeholder: "Only if you use multiple WABAs in YCloud",
+        required: true,
       },
     ],
-    externalIdField: {
-      label: "Phone number ID",
-      placeholder: "required — from YCloud → Phone Numbers",
-      help: "Routes inbound webhooks to this business.",
-    },
+    // No externalIdField — routing falls back to (provider, channel) which is
+    // perfect for the typical 1-business-1-WhatsApp-number setup.
   },
   {
     id: "whatsapp-manychat",

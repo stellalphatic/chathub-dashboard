@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 import { normalizeYCloudInbound } from "@/lib/providers/ycloud";
-import { enqueue, QUEUES, type InboundMessageJob } from "@/lib/queue";
+import { QUEUES, safeEnqueue, type InboundMessageJob } from "@/lib/queue";
 import { ingestInboundMessage } from "@/lib/services/inbound";
 
 export const runtime = "nodejs";
@@ -56,10 +56,13 @@ export async function POST(request: Request) {
         raw: m.raw,
         receivedAt: m.receivedAt,
       };
-      await enqueue(QUEUES.inboundMessage, job, {
+      // safeEnqueue: if Redis is briefly unreachable we still acknowledge
+      // YCloud — the row is in Postgres and the worker's reconciliation pass
+      // will pick it up. Returning 500 here causes YCloud to retry forever.
+      const r = await safeEnqueue(QUEUES.inboundMessage, job, {
         jobId: `in:${m.provider}:${m.externalMessageId}`,
       });
-      enqueued++;
+      if (r.ok) enqueued++;
     } catch (e) {
       console.error("[ycloud webhook]", e);
     }

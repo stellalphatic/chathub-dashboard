@@ -58,6 +58,34 @@ export async function enqueue<T>(
 }
 
 /**
+ * Best-effort enqueue. If Redis is unreachable (worker box down, network
+ * blip, security group misconfigured) we **don't** want a UI submit to fail
+ * — the row is already in Postgres and the worker will pick it up next time
+ * it can talk to Redis.
+ *
+ * Logs the failure so it's visible in CloudWatch, returns null on error.
+ */
+export async function safeEnqueue<T>(
+  name: QueueName,
+  payload: T,
+  opts?: JobsOptions & { jobId?: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await enqueue(name, payload, opts);
+    return { ok: true };
+  } catch (e) {
+    console.warn(
+      `[queue] enqueue ${name} failed, worker will pick up later:`,
+      e instanceof Error ? e.message : e,
+    );
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "queue unavailable",
+    };
+  }
+}
+
+/**
  * Cleanup helper called on worker startup.
  *
  * We used to register a BullMQ repeatable here to run the scheduled-ticker
