@@ -33,6 +33,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
 
+  // Lightweight debug log — first 1000 chars of the raw payload so we can see
+  // exactly what YCloud is sending in CloudWatch (helps debug missing
+  // profile.name etc.). Truncated to avoid noisy logs on big media events.
+  console.log(
+    "[ycloud webhook] payload",
+    raw.length > 1000 ? raw.slice(0, 1000) + "…" : raw,
+  );
+
   const messages = normalizeYCloudInbound(payload);
   let enqueued = 0;
   for (const m of messages) {

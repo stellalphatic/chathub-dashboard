@@ -59,4 +59,10 @@ export type ChannelSender = {
    * not supported.
    */
   showTyping?(externalMessageId: string): Promise<void>;
+  /**
+   * Optional best-effort: fetch the contact's profile display name from the
+   * provider when the inbound webhook didn't carry it. Used for late-binding
+   * customer.displayName so the LLM and CRM see real names.
+   */
+  fetchContactName?(phoneE164: string): Promise<string | undefined>;
 };

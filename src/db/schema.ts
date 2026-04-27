@@ -366,6 +366,21 @@ export const botConfig = pgTable("bot_config", {
   allowOutboundWithout24h: boolean("allow_outbound_without_24h")
     .notNull()
     .default(false),
+
+  // ── Voice / TTS configuration ────────────────────────────────────────
+  // When enabled, the worker generates a voice reply (in addition to the
+  // text reply) for inbound voice notes. Falls back to text-only on any
+  // TTS failure or when no provider is configured.
+  voiceReplyEnabled: boolean("voice_reply_enabled").notNull().default(false),
+  voiceProvider: text("voice_provider").default("elevenlabs"), // elevenlabs|openai|none
+  voiceVoiceId: text("voice_voice_id"), // ElevenLabs voiceId or OpenAI voice name
+  voiceModel: text("voice_model"), // e.g. eleven_turbo_v2 / tts-1
+  // Encrypted JSON: { apiKey: string }
+  voiceSecretsCiphertext: text("voice_secrets_ciphertext"),
+  // Transcription preferences (defaults to platform-wide GROQ_API_KEY)
+  transcriptionProvider: text("transcription_provider").default("groq"), // groq|openai
+  transcriptionLanguage: text("transcription_language"), // BCP-47 ("ur", "hi", …)
+
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });

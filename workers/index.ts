@@ -74,26 +74,47 @@ async function main() {
   // One-time cleanup of any broken BullMQ repeatables from past deploys.
   await cleanupLegacyTickerRepeatables();
 
-  // In-process minute tick — uses the same handler as the old BullMQ
-  // repeatable, but driven by setInterval. Two worker replicas will each
-  // tick; `FOR UPDATE SKIP LOCKED` in the SQL ensures we never double-send.
-  const TICK_EVERY_MS = 60_000;
-  const tick = async () => {
+  // Two-speed in-process loops:
+  //   - Fast tick (5s)  — inbound-reply reconciliation. Catches any messages
+  //                       whose enqueue failed from the webhook side, so end
+  //                       users see replies in ~5-8 seconds even when Redis
+  //                       was unreachable from Amplify Lambda.
+  //   - Slow tick (60s) — scheduled_message dispatch + locked-row release.
+  //                       Doesn't need to run every second; saves DB load.
+  const FAST_TICK_MS = Number(process.env.FAST_TICK_MS ?? 5_000);
+  const SLOW_TICK_MS = Number(process.env.SLOW_TICK_MS ?? 60_000);
+
+  const fastTick = async () => {
+    try {
+      const { reconcileInboundReplies } = await import(
+        "../src/lib/services/inbound-reconcile"
+      );
+      await reconcileInboundReplies(50);
+    } catch (e) {
+      console.warn("[fast-tick] reconcile failed:", e);
+    }
+  };
+  const slowTick = async () => {
     try {
       await handleScheduledTicker();
     } catch (e) {
-      console.error("[scheduled-ticker] in-process tick failed:", e);
+      console.error("[scheduled-ticker] tick failed:", e);
     }
   };
-  const tickerHandle = setInterval(tick, TICK_EVERY_MS);
-  // Run one immediately on boot so late-scheduled messages don't wait a full minute.
-  void tick();
 
-  console.log("[worker] ready; scheduled-ticker running every 60s in-process");
+  const fastHandle = setInterval(fastTick, FAST_TICK_MS);
+  const slowHandle = setInterval(slowTick, SLOW_TICK_MS);
+  void fastTick();
+  void slowTick();
+
+  console.log(
+    `[worker] ready; fast-tick=${FAST_TICK_MS}ms slow-tick=${SLOW_TICK_MS}ms in-process`,
+  );
 
   const shutdown = async (sig: string) => {
     console.log(`[worker] ${sig} — shutting down`);
-    clearInterval(tickerHandle);
+    clearInterval(fastHandle);
+    clearInterval(slowHandle);
     await Promise.all(workers.map((w) => w.close()));
     process.exit(0);
   };

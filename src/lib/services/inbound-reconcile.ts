@@ -37,7 +37,9 @@ export async function reconcileInboundReplies(batchSize = 50): Promise<{
       JOIN conversation c ON c.id = m.conversation_id
       WHERE m.direction = 'inbound'
         AND m.created_at >= NOW() - interval '15 minutes'
-        AND m.created_at <= NOW() - interval '20 seconds'
+        -- 2 second grace period for the normal queue path to win the race;
+        -- after that we dispatch directly so latency is bounded.
+        AND m.created_at <= NOW() - interval '2 seconds'
         AND m.inbound_reconciled_at IS NULL
         AND c.mode = 'bot'
         AND c.status <> 'closed'

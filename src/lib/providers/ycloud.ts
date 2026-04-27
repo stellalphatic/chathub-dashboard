@@ -90,6 +90,33 @@ export function createYCloudSender(
       }
     },
 
+    /**
+     * Best-effort fetch of the contact's WhatsApp profile name when the
+     * webhook didn't carry it. Returns undefined silently on any failure.
+     */
+    async fetchContactName(phoneE164: string): Promise<string | undefined> {
+      try {
+        const phone = phoneE164.startsWith("+") ? phoneE164 : `+${phoneE164}`;
+        const url = `${BASE}/whatsapp/contacts/${encodeURIComponent(phone)}`;
+        const res = await fetch(url, {
+          headers: { "x-api-key": secrets.apiKey },
+        });
+        if (!res.ok) return undefined;
+        const json = (await res.json()) as Record<string, unknown>;
+        const candidates = [
+          (json.profile as { name?: unknown } | undefined)?.name,
+          json.name,
+          (json.contact as { name?: unknown } | undefined)?.name,
+        ];
+        for (const c of candidates) {
+          if (typeof c === "string" && c.trim()) return c.trim();
+        }
+        return undefined;
+      } catch {
+        return undefined;
+      }
+    },
+
     async sendText(input: SendTextInput): Promise<SendResult> {
       if (!input.toPhoneE164) {
         throw new Error("ycloud sendText requires toPhoneE164");
@@ -138,6 +165,55 @@ export function createYCloudSender(
 }
 
 /**
+ * Try to find the WhatsApp profile name in any of the locations YCloud /
+ * Meta have shipped over the years. Returns the first non-empty trimmed
+ * string it finds, or undefined.
+ */
+function extractProfileName(
+  payload: Record<string, unknown>,
+  innerEvent?: Record<string, unknown>,
+): string | undefined {
+  type Maybe = unknown;
+  function pickString(v: Maybe): string | undefined {
+    if (typeof v !== "string") return undefined;
+    const t = v.trim();
+    return t.length > 0 ? t : undefined;
+  }
+  const candidates: Maybe[] = [];
+  // YCloud-direct shape — profile.name on the inner event
+  if (innerEvent) {
+    const p1 = innerEvent["profile"] as { name?: unknown } | undefined;
+    candidates.push(p1?.name);
+    // YCloud sometimes nests under whatsappContact / contact
+    const p2 = innerEvent["whatsappContact"] as { name?: unknown } | undefined;
+    candidates.push(p2?.name);
+    const p3 = innerEvent["contact"] as
+      | { name?: unknown; profile?: { name?: unknown } }
+      | undefined;
+    candidates.push(p3?.name);
+    candidates.push(p3?.profile?.name);
+    // Older payloads put it on `senderProfile`
+    const p4 = innerEvent["senderProfile"] as { name?: unknown } | undefined;
+    candidates.push(p4?.name);
+    candidates.push(innerEvent["fromName"]);
+    candidates.push(innerEvent["customerProfileName"]);
+  }
+  // Top-level (some webhooks include a contacts[] sibling at the root)
+  const topContacts = payload["contacts"] as
+    | Array<{ profile?: { name?: unknown }; name?: unknown }>
+    | undefined;
+  if (Array.isArray(topContacts) && topContacts.length > 0) {
+    candidates.push(topContacts[0]?.profile?.name);
+    candidates.push(topContacts[0]?.name);
+  }
+  for (const c of candidates) {
+    const v = pickString(c);
+    if (v) return v;
+  }
+  return undefined;
+}
+
+/**
  * Normalize a YCloud webhook payload to our common format.
  * YCloud forwards Meta's WhatsApp Cloud API events almost verbatim.
  */
@@ -155,7 +231,7 @@ export function normalizeYCloudInbound(
     const from = String(ev["from"] ?? "");
     const id = String(ev["id"] ?? ev["wamid"] ?? "");
     const typeRaw = String(ev["type"] ?? "text");
-    const fromName = (ev["profile"] as { name?: string } | undefined)?.name;
+    const fromName = extractProfileName(payload, ev);
     const phoneNumberId = String(ev["phoneNumberId"] ?? "");
     const body =
       typeRaw === "text"
@@ -199,7 +275,16 @@ export function normalizeYCloudInbound(
       for (const c of e.changes ?? []) {
         const val = c.value ?? {};
         const phoneNumberId = val.metadata?.phone_number_id ?? "";
-        const name = val.contacts?.[0]?.profile?.name;
+        // Prefer the contacts[0].profile.name (Meta-style); fall back to any
+        // other places it might live.
+        const rawName =
+          val.contacts?.[0]?.profile?.name ??
+          (val.contacts?.[0] as { name?: string } | undefined)?.name ??
+          undefined;
+        const name =
+          typeof rawName === "string" && rawName.trim().length > 0
+            ? rawName.trim()
+            : undefined;
         for (const msg of val.messages ?? []) {
           const typeRaw = String(msg["type"] ?? "text");
           const from = String(msg["from"] ?? "");

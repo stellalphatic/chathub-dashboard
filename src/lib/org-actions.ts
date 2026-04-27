@@ -112,7 +112,12 @@ export async function sendMessageAction(
   raw: z.infer<typeof sendSchema>,
 ): Promise<{ ok: true; messageId: string } | { error: string }> {
   const p = sendSchema.safeParse(raw);
-  if (!p.success) return { error: "invalid input" };
+  if (!p.success) {
+    const issues = p.error.issues
+      .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
+      .join("; ");
+    return { error: issues || "Invalid input" };
+  }
   const { org, userId } = await requireAccess(p.data.orgSlug);
 
   const [conv] = await db
@@ -364,22 +369,34 @@ const botConfigSchema = z.object({
   orgSlug: z.string(),
   enabled: z.boolean(),
   name: z.string().min(1).max(80),
-  persona: z.string().max(1000).optional(),
-  systemPrompt: z.string().max(4000).optional(),
-  escalationKeywords: z.string().max(500).optional(),
+  // Bumped to fit production-grade prompts (the Modern Motors persona /
+  // system prompt is ~5–6 kB, full prompt with rules + product specs can
+  // hit ~12 kB). Underlying Postgres column is unbounded TEXT so this is
+  // purely a sanity guard.
+  persona: z.string().max(4000).optional(),
+  systemPrompt: z.string().max(20_000).optional(),
+  escalationKeywords: z.string().max(1000).optional(),
   escalateOnLowConfidence: z.boolean(),
   confidenceThreshold: z.number().int().min(0).max(100),
   ragEnabled: z.boolean(),
   vectorStore: z.enum(["qdrant", "pinecone"]),
   temperatureX100: z.number().int().min(0).max(200),
-  maxOutputTokens: z.number().int().min(50).max(2048),
+  maxOutputTokens: z.number().int().min(50).max(4096),
 });
 
 export async function upsertBotConfigAction(
   raw: z.infer<typeof botConfigSchema>,
 ): Promise<{ ok: true } | { error: string }> {
   const p = botConfigSchema.safeParse(raw);
-  if (!p.success) return { error: "invalid input" };
+  if (!p.success) {
+    // Return field-by-field validation errors so the user can see which
+    // field is too long, missing, or out of range — not a generic
+    // "invalid input".
+    const issues = p.error.issues
+      .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
+      .join("; ");
+    return { error: issues || "Invalid input" };
+  }
   const gate = await requireOrgIntegrationWrite(p.data.orgSlug);
   if (!gate.ok) return { error: gate.error };
   const { org } = gate;
@@ -625,7 +642,12 @@ export async function scheduleTemplateAction(
   raw: z.infer<typeof scheduleSchema>,
 ): Promise<{ ok: true; id: string } | { error: string }> {
   const p = scheduleSchema.safeParse(raw);
-  if (!p.success) return { error: "invalid input" };
+  if (!p.success) {
+    const issues = p.error.issues
+      .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
+      .join("; ");
+    return { error: issues || "Invalid input" };
+  }
   const { org, userId } = await requireAccess(p.data.orgSlug);
 
   const runAt = new Date(p.data.runAt);

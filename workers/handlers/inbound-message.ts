@@ -44,17 +44,50 @@ export async function handleInboundMessage(job: Job<InboundMessageJob>) {
   if (!row.conversationId) return;
 
   // Best-effort: drive WhatsApp blue ticks + typing indicator immediately
-  // so the customer sees activity while we generate the reply. Both are
-  // wrapped so failures here NEVER block reply generation.
+  // so the customer sees activity while we generate the reply. Also try to
+  // back-fill the customer.displayName from the provider's contacts API if
+  // the webhook didn't include profile.name. All wrapped so failures never
+  // block reply generation.
   if (p.channel === "whatsapp" && p.externalMessageId) {
     void (async () => {
       try {
         const conn = await loadChannelConnection(p.channelConnectionId);
         await conn.sender.markAsRead?.(p.externalMessageId);
         await conn.sender.showTyping?.(p.externalMessageId);
+
+        // Late-bind name if missing.
+        if (p.fromPhoneE164 && conn.sender.fetchContactName) {
+          // Only try if we don't already have a name on the customer row.
+          const { customer } = await import("../../src/db/schema");
+          const { and: andOp, eq: eqOp } = await import("drizzle-orm");
+          const [cust] = await db
+            .select({ id: customer.id, displayName: customer.displayName })
+            .from(customer)
+            .where(
+              andOp(
+                eqOp(customer.organizationId, p.organizationId),
+                eqOp(customer.phoneE164, p.fromPhoneE164),
+              ),
+            )
+            .limit(1);
+          if (cust && !cust.displayName) {
+            const fetched = await conn.sender.fetchContactName(
+              p.fromPhoneE164,
+            );
+            if (fetched) {
+              await db
+                .update(customer)
+                .set({ displayName: fetched, updatedAt: new Date() })
+                .where(eqOp(customer.id, cust.id));
+              console.log(
+                `[inbound] back-filled displayName="${fetched}" for ${p.fromPhoneE164}`,
+              );
+            }
+          }
+        }
       } catch (e) {
         console.warn(
-          "[inbound] markAsRead/typing failed:",
+          "[inbound] markAsRead/typing/fetchName failed:",
           (e as Error).message,
         );
       }
