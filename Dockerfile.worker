@@ -5,7 +5,12 @@ ENV NODE_ENV=production
 
 RUN apk add --no-cache libc6-compat python3 make g++
 
+# Copy package metadata + the scripts folder *before* `npm ci` so the
+# postinstall hook (`node scripts/patch-drizzle-kit.mjs`) can find its file.
+# The script no-ops gracefully if drizzle-kit isn't present, which matters
+# here because --omit=dev skips drizzle-kit entirely in this image.
 COPY package.json package-lock.json* .npmrc ./
+COPY scripts ./scripts
 RUN npm ci --legacy-peer-deps --omit=dev
 
 COPY tsconfig.json ./
