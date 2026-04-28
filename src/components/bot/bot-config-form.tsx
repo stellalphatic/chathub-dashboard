@@ -515,7 +515,7 @@ function VoiceTab({
   );
   const [voiceId, setVoiceId] = useState<string>(initial.voiceVoiceId ?? "");
   const [model, setModel] = useState<string>(
-    initial.voiceModel ?? "eleven_turbo_v2",
+    initial.voiceModel ?? "eleven_multilingual_v2",
   );
   const [apiKey, setApiKey] = useState<string>(""); // never pre-filled
   const [transProvider, setTransProvider] = useState<string>(
@@ -597,12 +597,22 @@ function VoiceTab({
             onChange={(e) => setModel(e.target.value)}
             placeholder={
               provider === "elevenlabs"
-                ? "eleven_turbo_v2"
+                ? "eleven_multilingual_v2"
                 : provider === "openai"
                   ? "tts-1"
                   : "—"
             }
           />
+          {provider === "elevenlabs" && (
+            <p className="mt-1 text-[11px] text-[rgb(var(--fg-subtle))]">
+              <code>eleven_multilingual_v2</code> is the recommended default —
+              handles English / Urdu / Hindi / Arabic and code-switching well.
+              Pick a multilingual-trained voice in your Voice Lab; many
+              English-only voices butcher non-English text.{" "}
+              <code>eleven_turbo_v2_5</code> (faster, English-leaning) is fine
+              for English-only customer bases.
+            </p>
+          )}
         </div>
         <div>
           <Label>

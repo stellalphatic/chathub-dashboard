@@ -86,8 +86,11 @@ export async function resolveTtsConfig(
       (bot.voiceVoiceId && bot.voiceVoiceId.trim()) ||
       process.env.ELEVENLABS_VOICE_ID ||
       "21m00Tcm4TlvDq8ikWAM"; // ElevenLabs "Rachel" — safe default
+    // Default to the multilingual turbo model so Urdu/Hindi/Arabic come
+    // out clean. The actual model used for a given call may be upgraded
+    // again by `synthesizeElevenLabs` when it sees non-Latin script.
     const model =
-      (bot.voiceModel && bot.voiceModel.trim()) || "eleven_turbo_v2";
+      (bot.voiceModel && bot.voiceModel.trim()) || "eleven_multilingual_v2";
     if (!apiKey) return null;
     return { provider, apiKey, voiceId, model };
   }
@@ -124,11 +127,64 @@ export async function synthesizeSpeech(
   return await synthesizeOpenAI(cfg, trimmed, started);
 }
 
+/**
+ * Detect the script of the LLM output. We use this to:
+ *   1. Auto-upgrade the TTS model to a multilingual one when the text
+ *      contains non-Latin glyphs.
+ *   2. Pick voice settings that sound emotional/realistic for the script.
+ */
+function detectScript(
+  text: string,
+): "latin" | "arabic" | "devanagari" | "cjk" | "mixed" {
+  const arabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(
+    text,
+  );
+  const devanagari = /[\u0900-\u097F]/.test(text);
+  const cjk = /[\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/.test(text);
+  const latin = /[A-Za-z]/.test(text);
+
+  if (arabic) return latin ? "mixed" : "arabic";
+  if (devanagari) return latin ? "mixed" : "devanagari";
+  if (cjk) return latin ? "mixed" : "cjk";
+  return "latin";
+}
+
 async function synthesizeElevenLabs(
   cfg: { apiKey: string; voiceId: string; model: string },
   text: string,
   started: number,
 ): Promise<TtsResult> {
+  // Pick the best model for the input script.
+  //   - Latin only       → keep configured model (turbo if user set it)
+  //   - Anything else    → force eleven_multilingual_v2 (best Urdu/Hindi/
+  //                        Arabic/Devanagari pronunciation)
+  const script = detectScript(text);
+  const wantsMultilingual = script !== "latin";
+  const isLegacyEnglishOnly =
+    cfg.model === "eleven_monolingual_v1" || cfg.model === "eleven_turbo_v2";
+  const effectiveModel =
+    wantsMultilingual && isLegacyEnglishOnly
+      ? "eleven_multilingual_v2"
+      : cfg.model;
+
+  // Voice settings: lower stability + a touch of style = more emotional
+  // inflection (less robotic). For non-Latin scripts we go a bit more
+  // expressive — those languages carry intonation that sounds flat at
+  // very high stability.
+  const voiceSettings = wantsMultilingual
+    ? {
+        stability: 0.4,
+        similarity_boost: 0.85,
+        style: 0.4,
+        use_speaker_boost: true,
+      }
+    : {
+        stability: 0.5,
+        similarity_boost: 0.8,
+        style: 0.25,
+        use_speaker_boost: true,
+      };
+
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(
     cfg.voiceId,
   )}?output_format=mp3_44100_128`;
@@ -147,13 +203,8 @@ async function synthesizeElevenLabs(
       },
       body: JSON.stringify({
         text,
-        model_id: cfg.model,
-        voice_settings: {
-          stability: 0.55,
-          similarity_boost: 0.75,
-          style: 0.0,
-          use_speaker_boost: true,
-        },
+        model_id: effectiveModel,
+        voice_settings: voiceSettings,
       }),
       signal: ctrl.signal,
     });
@@ -167,7 +218,7 @@ async function synthesizeElevenLabs(
       mimeType: "audio/mpeg",
       provider: "elevenlabs",
       voiceId: cfg.voiceId,
-      model: cfg.model,
+      model: effectiveModel,
       latencyMs: Date.now() - started,
     };
   } finally {
