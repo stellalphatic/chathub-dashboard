@@ -522,7 +522,7 @@ function VoiceTab({
     initial.transcriptionProvider ?? "groq",
   );
   const [transLang, setTransLang] = useState<string>(
-    initial.transcriptionLanguage ?? "ur",
+    initial.transcriptionLanguage ?? "auto",
   );
   const [msg, setMsg] = useState<{ ok?: string; err?: string } | null>(null);
   const [pending, start] = useTransition();
@@ -538,7 +538,10 @@ function VoiceTab({
         voiceModel: model.trim() || null,
         // Empty key → keep the existing one. Only send when user typed something.
         voiceApiKey: apiKey.trim() ? apiKey.trim() : null,
-        transcriptionProvider: transProvider as "groq" | "openai",
+        transcriptionProvider: transProvider as
+          | "groq"
+          | "openai"
+          | "elevenlabs",
         transcriptionLanguage: transLang.trim() || null,
       });
       if ("error" in res) setMsg({ err: res.error });
@@ -639,21 +642,35 @@ function VoiceTab({
               onChange={(e) => setTransProvider(e.target.value)}
               className="mt-1 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-3 py-2 text-sm"
             >
-              <option value="groq">Groq Whisper (default, fastest)</option>
+              <option value="groq">Groq Whisper (default — fastest, free tier)</option>
+              <option value="elevenlabs">ElevenLabs Scribe (best for code-switched Urdu / Hindi / English)</option>
               <option value="openai">OpenAI Whisper</option>
             </select>
+            <p className="mt-1 text-[11px] text-[rgb(var(--fg-subtle))]">
+              ElevenLabs Scribe handles mixed-language speech naturally —
+              ideal for customers who speak Urdu + English in the same
+              sentence. Reuses the API key you saved above.
+            </p>
           </div>
           <div>
             <Label>Preferred language</Label>
-            <Input
-              className="mt-1"
+            <select
               value={transLang}
               onChange={(e) => setTransLang(e.target.value)}
-              placeholder="ur (Urdu) / hi (Hindi) / en"
-            />
+              className="mt-1 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-3 py-2 text-sm"
+            >
+              <option value="auto">Auto-detect (recommended)</option>
+              <option value="ur">Urdu</option>
+              <option value="hi">Hindi</option>
+              <option value="en">English</option>
+              <option value="ar">Arabic</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+            </select>
             <p className="mt-1 text-[11px] text-[rgb(var(--fg-subtle))]">
-              BCP-47 code. Use <code>ur</code> to force Roman/Arabic-script
-              Urdu output for Urdu/Hindi audio.
+              Auto-detect lets the provider figure out the language per
+              clip. Forcing a language only helps when you know everyone
+              speaks the same one.
             </p>
           </div>
         </div>

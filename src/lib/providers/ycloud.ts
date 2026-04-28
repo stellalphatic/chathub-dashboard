@@ -54,39 +54,56 @@ export function createYCloudSender(
     return res.json() as Promise<Record<string, unknown>>;
   }
 
+  /**
+   * YCloud uses a **dedicated sub-route** for marking messages as read /
+   * showing typing — NOT the same `/whatsapp/messages` endpoint we use to
+   * send. Reference:
+   *   POST https://api.ycloud.com/v2/whatsapp/messages/{id}/read
+   *   body: {} or { typingIndicator: { type: "text" } }
+   */
+  async function postMarkRead(
+    messageId: string,
+    body: Record<string, unknown> = {},
+  ): Promise<void> {
+    const res = await fetch(
+      `${BASE}/whatsapp/messages/${encodeURIComponent(messageId)}/read`,
+      {
+        method: "POST",
+        headers: {
+          "x-api-key": secrets.apiKey,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`ycloud /messages/${messageId}/read ${res.status}: ${text}`);
+    }
+  }
+
   return {
     /**
      * Mark an inbound message as read on WhatsApp (drives blue ticks).
-     * YCloud's status update endpoint requires `from` (the business phone)
-     * + `messageId` + `status:"read"`.
      * Best-effort — failures are logged but never thrown.
      */
     async markAsRead(externalMessageId: string): Promise<void> {
       if (!externalMessageId) return;
-      if (!config.fromPhoneE164) return;
       try {
-        await post("/whatsapp/messages", {
-          from: config.fromPhoneE164,
-          messageId: externalMessageId,
-          status: "read",
-        });
+        await postMarkRead(externalMessageId);
       } catch (e) {
         console.warn("[ycloud markAsRead] failed:", (e as Error).message);
       }
     },
 
     /**
-     * Show "typing…" indicator (WhatsApp Cloud API 2024+). YCloud bundles
-     * it with the same status update — same required fields.
+     * Show "typing…" indicator (WhatsApp Cloud API 2024+). YCloud passes
+     * `typingIndicator` through to Meta. Implies read-receipt as well.
      */
     async showTyping(externalMessageId: string): Promise<void> {
       if (!externalMessageId) return;
-      if (!config.fromPhoneE164) return;
       try {
-        await post("/whatsapp/messages", {
-          from: config.fromPhoneE164,
-          messageId: externalMessageId,
-          status: "read",
+        await postMarkRead(externalMessageId, {
           typingIndicator: { type: "text" },
         });
       } catch (e) {

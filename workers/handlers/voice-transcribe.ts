@@ -32,7 +32,9 @@ export async function handleVoiceTranscribe(job: Job<VoiceTranscribeJob>) {
   try {
     const t = await transcribeAudio({
       mediaUrl: p.mediaUrl,
-      preferredLanguage: process.env.DEFAULT_VOICE_LANG,
+      organizationId: p.organizationId,
+      // Don't pass preferredLanguage — it'll auto-resolve from per-org
+      // bot_config.transcriptionLanguage (or "auto" for code-switched audio).
     });
     const text = (t.text ?? "").trim();
     await db

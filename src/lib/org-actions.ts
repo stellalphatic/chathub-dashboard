@@ -459,7 +459,9 @@ const botVoiceSchema = z.object({
   voiceModel: z.string().nullable(),
   /** null = keep existing secret. Empty string also treated as "keep". */
   voiceApiKey: z.string().nullable(),
-  transcriptionProvider: z.enum(["groq", "openai"]).default("groq"),
+  transcriptionProvider: z
+    .enum(["groq", "openai", "elevenlabs"])
+    .default("groq"),
   transcriptionLanguage: z.string().nullable(),
 });
 

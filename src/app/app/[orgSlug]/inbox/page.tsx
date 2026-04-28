@@ -11,6 +11,7 @@ import { ThreadMessages } from "@/components/inbox/thread-messages";
 import { db } from "@/db";
 import { conversation, customer, message, template } from "@/db/schema";
 import { assertOrgMember } from "@/lib/org-access";
+import { cn } from "@/lib/utils";
 
 export default async function InboxPage({
   params,
@@ -99,14 +100,33 @@ export default async function InboxPage({
         <LiveIndicator />
       </div>
 
+      {/*
+        Mobile-first WhatsApp layout:
+        - On lg+ screens it's the classic 2-pane (list left, thread right).
+        - On <lg screens we stack: when a conversation is selected, the
+          list disappears and the thread takes the full width. The
+          ConversationHeader's back button drops the user back to the list.
+      */}
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,20rem)_1fr] xl:grid-cols-[minmax(0,24rem)_1fr]">
-        <InboxSidebar
-          orgSlug={orgSlug}
-          conversations={sidebarConvs}
-          selectedId={selectedId}
-        />
+        <div
+          className={cn(
+            "min-h-0 lg:block",
+            active ? "hidden" : "block",
+          )}
+        >
+          <InboxSidebar
+            orgSlug={orgSlug}
+            conversations={sidebarConvs}
+            selectedId={selectedId}
+          />
+        </div>
 
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface))]">
+        <section
+          className={cn(
+            "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--surface))]",
+            active ? "flex" : "hidden lg:flex",
+          )}
+        >
           {active ? (
             <>
               <ConversationHeader

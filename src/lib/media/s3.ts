@@ -77,9 +77,18 @@ export function isS3Configured(): boolean {
 async function buildS3Client() {
   const { region, accessKeyId, secretAccessKey, sessionToken } = getS3Config();
   const { S3Client } = await import("@aws-sdk/client-s3");
+  // followRegionRedirects: when the bucket actually lives in a different
+  // region than `S3_REGION`, S3 returns 301/PermanentRedirect with the real
+  // region in `x-amz-bucket-region`. The v3 SDK can transparently retry
+  // against the correct endpoint with this flag enabled — saves a
+  // misconfiguration spiral.
+  const common = {
+    region,
+    followRegionRedirects: true,
+  };
   if (accessKeyId && secretAccessKey) {
     return new S3Client({
-      region,
+      ...common,
       credentials: {
         accessKeyId,
         secretAccessKey,
@@ -89,7 +98,7 @@ async function buildS3Client() {
   }
   // No explicit credentials → let the SDK use its default chain
   // (instance profile on EC2, Amplify service role, etc.).
-  return new S3Client({ region });
+  return new S3Client(common);
 }
 
 /**
@@ -120,14 +129,36 @@ export async function uploadToS3(input: S3UploadInput): Promise<S3UploadResult> 
       : `misc/${Date.now()}`;
   const key = `${input.organizationId}/${segment}/${guessedName}`;
 
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      Body: input.body,
-      ContentType: input.mimeType || "application/octet-stream",
-    }),
-  );
+  try {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: input.body,
+        ContentType: input.mimeType || "application/octet-stream",
+      }),
+    );
+  } catch (e) {
+    // PermanentRedirect / region mismatch: surface the bucket's real region
+    // so the operator knows exactly what to set in S3_REGION.
+    const err = e as {
+      name?: string;
+      Code?: string;
+      $metadata?: { httpHeaders?: Record<string, string> };
+    };
+    const realRegion =
+      err.$metadata?.httpHeaders?.["x-amz-bucket-region"] ?? "(unknown)";
+    if (
+      err.name === "PermanentRedirect" ||
+      err.Code === "PermanentRedirect" ||
+      String((e as Error).message ?? "").includes("must be addressed")
+    ) {
+      throw new Error(
+        `S3 region mismatch: bucket "${bucket}" lives in "${realRegion}" but S3_REGION is set to "${region}". Update S3_REGION (or recreate the bucket in the desired region).`,
+      );
+    }
+    throw e;
+  }
 
   const publicUrl = `https://${bucket}.s3.${region}.amazonaws.com/${encodeURIComponent(
     key,
