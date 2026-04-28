@@ -16,6 +16,11 @@ import {
 } from "./manychat";
 import type { ChannelSender } from "./types";
 import {
+  createSyrowSender,
+  type SyrowConfig,
+  type SyrowSecrets,
+} from "./syrow";
+import {
   createYCloudSender,
   type YCloudConfig,
   type YCloudSecrets,
@@ -50,6 +55,12 @@ export async function loadChannelConnection(
   switch (row.provider) {
     case "ycloud":
       sender = createYCloudSender(secrets as YCloudSecrets, config as unknown as YCloudConfig);
+      break;
+    case "syrow":
+      sender = createSyrowSender(
+        secrets as SyrowSecrets,
+        config as unknown as SyrowConfig,
+      );
       break;
     case "meta":
       if (row.channel === "instagram") {

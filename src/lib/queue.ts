@@ -164,7 +164,7 @@ export type InboundMessageJob = {
   organizationId: string;
   channelConnectionId: string;
   channel: "whatsapp" | "instagram" | "messenger" | "sms" | "voice";
-  provider: "ycloud" | "manychat" | "meta" | "twilio" | "vonage";
+  provider: "ycloud" | "manychat" | "meta" | "twilio" | "vonage" | "syrow";
   externalMessageId: string;
   fromPhoneE164?: string;
   fromExternalId?: string; // ig/fb id

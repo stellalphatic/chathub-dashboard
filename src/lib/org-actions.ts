@@ -289,7 +289,7 @@ export async function deleteConversationAction(input: {
 const connectChannelSchema = z.object({
   orgSlug: z.string(),
   channel: z.enum(["whatsapp", "instagram", "messenger"]),
-  provider: z.enum(["ycloud", "manychat", "meta"]),
+  provider: z.enum(["ycloud", "manychat", "meta", "syrow"]),
   label: z.string().optional(),
   externalId: z.string().optional(),
   config: z.record(z.unknown()).default({}),

@@ -5,7 +5,13 @@ export type ChannelKind =
   | "sms"
   | "voice";
 
-export type ProviderKind = "ycloud" | "manychat" | "meta" | "twilio" | "vonage";
+export type ProviderKind =
+  | "ycloud"
+  | "manychat"
+  | "meta"
+  | "twilio"
+  | "vonage"
+  | "syrow";
 
 export type NormalizedInboundMessage = {
   provider: ProviderKind;

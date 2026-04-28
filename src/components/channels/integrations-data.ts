@@ -21,7 +21,7 @@ export type Integration = {
   id: string;
   category: "whatsapp" | "instagram" | "messenger";
   channel: "whatsapp" | "instagram" | "messenger";
-  provider: "ycloud" | "meta" | "manychat";
+  provider: "ycloud" | "meta" | "manychat" | "syrow";
   title: string;
   tagline: string;
   icon: ComponentType<{ className?: string }>;
@@ -112,6 +112,74 @@ export const INTEGRATIONS: Integration[] = [
     ],
     // No externalIdField — routing falls back to (provider, channel) which is
     // perfect for the typical 1-business-1-WhatsApp-number setup.
+  },
+  {
+    id: "whatsapp-syrow",
+    category: "whatsapp",
+    channel: "whatsapp",
+    provider: "syrow",
+    title: "WhatsApp Business via Syrow Care",
+    tagline:
+      "Connect a WhatsApp Business number through Syrow's care platform. Inbound + outbound, templates, AI-Action forms.",
+    icon: MessageCircle,
+    colorCls: "text-emerald-500",
+    webhookPath: "/api/webhooks/syrow",
+    webhookHelp:
+      "Paste this URL in Syrow → Stream → Webhooks. If you set SYROW_WEBHOOK_SECRET, ChatHub verifies the signature on every request (HMAC-SHA256 in X-Syrow-Signature, or a flat secret in X-Webhook-Secret).",
+    docsUrl: "https://documenter.getpostman.com/view/23781764/2sAXqy3f5Z",
+    hideLabelField: true,
+    steps: [
+      {
+        title: "Sign in to Syrow Care and connect WhatsApp",
+        body: "Go to care.syrow.com → connect your WhatsApp number (Meta WABA). Once verified, copy the number in E.164 format (e.g. +14151234567).",
+        links: [{ label: "Syrow Care dashboard", href: "https://care.syrow.com" }],
+      },
+      {
+        title: "Generate your API key",
+        body: "Syrow dashboard → Settings → API → create a key. This is what ChatHub uses to send messages on your behalf — keep it secret.",
+      },
+      {
+        title: "Copy your Stream Hash",
+        body: "Each WhatsApp connection in Syrow has a Stream Hash (e.g. uNpd939V5qM). It identifies which WABA to send through. Find it in Syrow → Streams → your WhatsApp stream.",
+      },
+      {
+        title: "Add the webhook URL above to your Stream",
+        body: "Syrow → Streams → your stream → Webhooks → set the inbound URL to the URL shown above. Subscribe to message + status events.",
+      },
+      {
+        title: "Save credentials below",
+        body: "Enter your business phone (E.164), API key, and Stream Hash. Hit Save & connect — you'll show as Connected in a moment.",
+      },
+      {
+        title: "Test it",
+        body: "Send a WhatsApp message from a personal phone to the business number. It should appear in ChatHub → Inbox within 1–2 seconds, and the AI will reply if enabled.",
+      },
+    ],
+    configFields: [
+      {
+        key: "fromPhoneE164",
+        label: "WhatsApp business phone",
+        placeholder: "+14151234567",
+        help: "Your WhatsApp Business number in E.164 format (with country code).",
+        required: true,
+      },
+      {
+        key: "streamHash",
+        label: "Stream hash",
+        placeholder: "uNpd939V5qM",
+        help: "From Syrow → Streams. Identifies which WhatsApp connection to send through.",
+        required: true,
+      },
+    ],
+    secretFields: [
+      {
+        key: "apiKey",
+        label: "Syrow API key",
+        type: "password",
+        placeholder: "sk_syrow_xxx",
+        required: true,
+      },
+    ],
   },
   {
     id: "whatsapp-manychat",
