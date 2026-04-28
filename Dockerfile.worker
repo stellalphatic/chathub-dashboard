@@ -3,7 +3,10 @@ FROM node:20-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 
-RUN apk add --no-cache libc6-compat python3 make g++
+# `ffmpeg` is needed to transcode TTS output (MP3 from ElevenLabs) into
+# OGG OPUS, which is the format WhatsApp uses for the green "voice note"
+# bubble. Roughly +30 MB to the image — worth it for proper voice-note UX.
+RUN apk add --no-cache libc6-compat python3 make g++ ffmpeg
 
 # Copy package metadata + the scripts folder *before* `npm ci` so the
 # postinstall hook (`node scripts/patch-drizzle-kit.mjs`) can find its file.

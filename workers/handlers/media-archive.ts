@@ -30,6 +30,8 @@ export async function handleMediaArchive(job: Job<MediaArchiveJob>) {
   if (!row.mediaUrl) return { skipped: true, reason: "no_media_url" };
 
   // Already on S3? Skip. Matches: https://<bucket>.s3.<region>.amazonaws.com/…
+  // The inbox UI rewrites these to /api/v1/media/<id> on the client so the
+  // agent's browser always re-signs through us.
   if (/\.s3\.[a-z0-9-]+\.amazonaws\.com\//.test(row.mediaUrl)) {
     return { skipped: true, reason: "already_on_s3" };
   }
@@ -46,10 +48,8 @@ export async function handleMediaArchive(job: Job<MediaArchiveJob>) {
     if (!res) return { skipped: true, reason: "s3_not_configured" };
     await db
       .update(message)
-      // Signed URL so the inbox UI (browser) can stream the audio/image
-      // even when the bucket has Block Public Access enabled. URL is valid
-      // for 24h; for older messages we'd want a /api/media/<id> proxy that
-      // re-signs on demand — left for v1.1.
+      // Store the canonical S3 (signed) URL. The inbox rewrites it to
+      // /api/v1/media/<id> for stable, auth-protected playback.
       .set({ mediaUrl: res.signedUrl })
       .where(eq(message.id, row.id));
     return { ok: true, key: res.key };

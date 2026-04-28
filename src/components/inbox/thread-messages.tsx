@@ -6,6 +6,20 @@ import { useEffect, useRef } from "react";
 import { VoicePlayer } from "@/components/inbox/voice-player";
 import { cn } from "@/lib/utils";
 
+/**
+ * Rewrite a stored mediaUrl to the auth-protected proxy URL for the agent's
+ * browser. S3 signed URLs that get persisted in the DB only live ~24h, so
+ * directly handing them to <audio>/<img> breaks for old conversations.
+ * The /api/v1/media/<id> route re-signs on demand and is auth-checked.
+ */
+function proxyMediaUrl(messageId: string, raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  if (raw.startsWith("/api/v1/media/")) return raw;
+  // S3 (any region) → proxy. Provider CDN / external URLs → also proxy
+  // (the route 302s to non-S3 URLs as-is, just adds an auth check).
+  return `/api/v1/media/${messageId}`;
+}
+
 export type ThreadMessage = {
   id: string;
   direction: string;
@@ -183,7 +197,7 @@ export function ThreadMessages({
                   >
                     <AttachmentPreview
                       contentType={m.contentType}
-                      mediaUrl={m.mediaUrl}
+                      mediaUrl={proxyMediaUrl(m.id, m.mediaUrl)}
                       mediaMimeType={m.mediaMimeType}
                       outbound={outbound}
                     />

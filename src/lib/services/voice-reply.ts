@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversation, customer, message } from "@/db/schema";
 import { isS3Configured, uploadToS3 } from "@/lib/media/s3";
+import { tryTranscodeToOggOpus } from "@/lib/media/transcode";
 import { loadChannelConnection } from "@/lib/providers/sender-factory";
 import { synthesizeSpeech } from "@/lib/tts";
 
@@ -67,20 +68,32 @@ export async function maybeSendVoiceReply(opts: {
   }
   if (!tts) return { ok: false, reason: "tts not configured" };
 
-  // 2. Upload MP3 to S3 — we need a fetchable URL for the provider.
-  // Use the SIGNED URL (24h) so YCloud / Meta can GET the object even when
-  // the bucket has Block Public Access enabled (the secure default).
+  // 2. Transcode MP3 → OGG OPUS so WhatsApp shows the green "voice note"
+  //    bubble (and modern browsers play OGG OPUS natively in <audio>).
+  //    Falls through to the original MP3 if ffmpeg isn't available.
+  const transcoded = await tryTranscodeToOggOpus(tts.audio);
+  console.log(
+    `[voice-reply] tts=${tts.audio.byteLength}B → ${transcoded.ext}=${transcoded.buffer.byteLength}B (transcoded=${transcoded.transcoded})`,
+  );
+
+  // 3. Upload to S3 + use the signed URL for provider GETs.
   let audioUrl: string;
+  let outboundCanonicalUrl: string;
+  let outboundMessageId: string;
   try {
-    const messageId = randomUUID();
+    outboundMessageId = randomUUID();
     const res = await uploadToS3({
       organizationId: opts.organizationId,
-      messageId,
-      fileName: `reply-${Date.now()}.mp3`,
-      mimeType: tts.mimeType,
-      body: tts.audio,
+      messageId: outboundMessageId,
+      fileName: `reply-${Date.now()}.${transcoded.ext}`,
+      mimeType: transcoded.mimeType,
+      body: transcoded.buffer,
     });
     audioUrl = res.signedUrl;
+    // Store the canonical S3 (signed) URL on the message row. The inbox
+    // UI rewrites it to /api/v1/media/<id> on the client so it always
+    // gets a fresh signed URL through our auth-protected proxy.
+    outboundCanonicalUrl = res.signedUrl;
   } catch (e) {
     return { ok: false, reason: `s3 upload failed: ${(e as Error).message}` };
   }
@@ -98,7 +111,7 @@ export async function maybeSendVoiceReply(opts: {
 
     // 4. Persist as an outbound voice_note message so the inbox shows it.
     await db.insert(message).values({
-      id: randomUUID(),
+      id: outboundMessageId,
       organizationId: opts.organizationId,
       customerId: cust.id,
       conversationId: conv.id,
@@ -108,8 +121,8 @@ export async function maybeSendVoiceReply(opts: {
       // Keep the script as `body` so the inbox preview shows useful text + the
       // bot's transcript stays searchable.
       body: opts.text,
-      mediaUrl: audioUrl,
-      mediaMimeType: tts.mimeType,
+      mediaUrl: outboundCanonicalUrl,
+      mediaMimeType: transcoded.mimeType,
       transcript: opts.text,
       sentByBot: true,
       status: "sent",
