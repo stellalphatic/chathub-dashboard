@@ -148,11 +148,17 @@ export async function transcribeAudio(opts: {
 
   const cfg = await resolveSttConfig(opts.organizationId);
   const provider = opts.preferredProvider ?? cfg.provider;
+  // Resolution: explicit override → org config → auto.
+  // We deliberately DON'T fall back to DEFAULT_VOICE_LANG here — that env
+  // was a bootstrap convenience and pre-dates the per-org config. Honoring
+  // it now forces every business onto whatever language the EC2 box was
+  // initially configured for, even when their bot_config says something
+  // else (or "auto").
+  const explicit = opts.preferredLanguage ?? cfg.language;
   const language =
-    opts.preferredLanguage ??
-    cfg.language ??
-    process.env.DEFAULT_VOICE_LANG ??
-    "auto"; // auto-detect by default — best for code-switched audio
+    explicit && explicit.trim().toLowerCase() !== "auto"
+      ? explicit.trim().toLowerCase()
+      : "auto";
 
   const lookup: Array<{ p: TranscribeProvider; key: string }> = [
     { p: provider, key: getKeyForProvider(provider, cfg.apiKey) },

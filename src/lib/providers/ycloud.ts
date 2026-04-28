@@ -85,14 +85,21 @@ export function createYCloudSender(
   return {
     /**
      * Mark an inbound message as read on WhatsApp (drives blue ticks).
-     * Best-effort — failures are logged but never thrown.
+     * Best-effort — failures are logged but never thrown. Treats 404 as
+     * a benign race with YCloud's indexing.
      */
     async markAsRead(externalMessageId: string): Promise<void> {
       if (!externalMessageId) return;
       try {
         await postMarkRead(externalMessageId);
       } catch (e) {
-        console.warn("[ycloud markAsRead] failed:", (e as Error).message);
+        const msg = (e as Error).message;
+        if (/404|NOT_FOUND/.test(msg)) {
+          // Webhook fired before YCloud finished indexing the message.
+          // Read receipt can be skipped without user impact.
+          return;
+        }
+        console.warn("[ycloud markAsRead] failed:", msg);
       }
     },
 
@@ -107,8 +114,9 @@ export function createYCloudSender(
           typingIndicator: { type: "text" },
         });
       } catch (e) {
-        // Typing isn't broadly supported — silent fallback.
-        console.warn("[ycloud showTyping] failed:", (e as Error).message);
+        const msg = (e as Error).message;
+        if (/404|NOT_FOUND/.test(msg)) return;
+        console.warn("[ycloud showTyping] failed:", msg);
       }
     },
 
@@ -299,7 +307,10 @@ export function normalizeYCloudInbound(
       return null;
     }
     const from = String(ev["from"] ?? "");
-    const id = String(ev["id"] ?? ev["wamid"] ?? "");
+    // Prefer `wamid` (Meta's WhatsApp message id) over YCloud's internal id.
+    // The /messages/{id}/read endpoint requires wamid; using YCloud's id
+    // returns 404 "No message available".
+    const id = String(ev["wamid"] ?? ev["id"] ?? "");
     const typeRaw = String(ev["type"] ?? "text");
     const fromName = extractProfileName(payload, ev);
     const phoneNumberId = String(
@@ -344,6 +355,9 @@ export function normalizeYCloudInbound(
   }
 
   // --- Shape 1 (current): { type:"whatsapp.message.received", whatsappMessage:{...} }
+  // For read-receipt routing we need the WhatsApp `wamid` (Meta's id), not
+  // YCloud's internal numeric `id`. We surface wamid as externalMessageId
+  // when it's present so downstream markAsRead() hits the right route.
   const evNew = payload["whatsappMessage"] as
     | Record<string, unknown>
     | undefined;

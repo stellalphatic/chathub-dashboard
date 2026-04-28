@@ -46,7 +46,11 @@ export async function handleMediaArchive(job: Job<MediaArchiveJob>) {
     if (!res) return { skipped: true, reason: "s3_not_configured" };
     await db
       .update(message)
-      .set({ mediaUrl: res.publicUrl })
+      // Signed URL so the inbox UI (browser) can stream the audio/image
+      // even when the bucket has Block Public Access enabled. URL is valid
+      // for 24h; for older messages we'd want a /api/media/<id> proxy that
+      // re-signs on demand — left for v1.1.
+      .set({ mediaUrl: res.signedUrl })
       .where(eq(message.id, row.id));
     return { ok: true, key: res.key };
   } catch (e) {

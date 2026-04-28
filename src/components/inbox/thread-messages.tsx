@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Bot, FileText, User, Video } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { VoicePlayer } from "@/components/inbox/voice-player";
 import { cn } from "@/lib/utils";
 
 export type ThreadMessage = {
@@ -57,19 +58,7 @@ function AttachmentPreview({
   }
 
   if (isAudio) {
-    return (
-      <audio
-        controls
-        preload="none"
-        className={cn(
-          "mb-1 w-full max-w-sm rounded-xl",
-          outbound ? "opacity-95" : "",
-        )}
-        src={mediaUrl}
-      >
-        Your browser doesn&apos;t support audio playback.
-      </audio>
-    );
+    return <VoicePlayer src={mediaUrl} outbound={outbound} />;
   }
 
   if (isVideo) {

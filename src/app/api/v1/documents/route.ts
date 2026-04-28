@@ -92,7 +92,9 @@ export async function POST(request: Request) {
           mimeType: file.type || "application/octet-stream",
           body: buf,
         });
-        fileUrl = res.publicUrl;
+        // Use signed URL so the worker can fetch even when the bucket has
+        // Block Public Access enabled.
+        fileUrl = res.signedUrl;
       } catch (e) {
         console.error("[documents] S3 upload failed:", e);
         // Surface the specific S3 error code + message so the operator can

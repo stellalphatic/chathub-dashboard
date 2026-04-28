@@ -807,48 +807,80 @@ const broadcastSchema = z.object({
 export async function createBroadcastAction(
   raw: z.infer<typeof broadcastSchema>,
 ): Promise<{ ok: true; id: string } | { error: string }> {
-  const p = broadcastSchema.safeParse(raw);
-  if (!p.success) return { error: p.error.issues.map((i) => i.message).join(", ") };
-  const { org, userId } = await requireAccess(p.data.orgSlug);
+  try {
+    const p = broadcastSchema.safeParse(raw);
+    if (!p.success) {
+      return {
+        error: p.error.issues
+          .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
+          .join("; "),
+      };
+    }
+    const { org, userId } = await requireAccess(p.data.orgSlug);
 
-  const [tpl] = await db
-    .select({ id: template.id, status: template.status })
-    .from(template)
-    .where(
-      and(eq(template.id, p.data.templateId), eq(template.organizationId, org.id)),
-    )
-    .limit(1);
-  if (!tpl) return { error: "template not found" };
-  if (tpl.status !== "approved") return { error: "template not approved" };
+    const [tpl] = await db
+      .select({ id: template.id, status: template.status })
+      .from(template)
+      .where(
+        and(eq(template.id, p.data.templateId), eq(template.organizationId, org.id)),
+      )
+      .limit(1);
+    if (!tpl) return { error: "Template not found" };
+    if (tpl.status !== "approved")
+      return { error: "Template is not yet approved" };
 
-  const id = randomUUID();
-  await db.insert(broadcast).values({
-    id,
-    organizationId: org.id,
-    name: p.data.name,
-    channel: p.data.channel,
-    templateId: tpl.id,
-    channelConnectionId: p.data.channelConnectionId ?? null,
-    audience: {
-      tags: p.data.audienceTags,
-      statuses: p.data.audienceStatuses,
-      limit: p.data.audienceLimit,
-    },
-    defaultVariables: p.data.defaultVariables,
-    status: p.data.runNow ? "scheduled" : "draft",
-    scheduledFor: p.data.scheduledFor ? new Date(p.data.scheduledFor) : null,
-    createdByUserId: userId,
-  });
+    // Three modes:
+    //   - runNow=true  → status="scheduled", enqueue worker immediately
+    //   - scheduledFor → status="scheduled", scheduledFor=<future ts>,
+    //                    slow-tick will dispatch when due
+    //   - default      → status="draft", run manually later
+    const scheduledForDate = p.data.scheduledFor
+      ? new Date(p.data.scheduledFor)
+      : null;
+    if (scheduledForDate && Number.isNaN(scheduledForDate.getTime())) {
+      return { error: "Invalid scheduledFor — use ISO 8601" };
+    }
 
-  if (p.data.runNow) {
-    const job: BroadcastRunnerJob = {
+    const status = p.data.runNow
+      ? "scheduled"
+      : scheduledForDate
+        ? "scheduled"
+        : "draft";
+
+    const id = randomUUID();
+    await db.insert(broadcast).values({
+      id,
       organizationId: org.id,
-      broadcastId: id,
+      name: p.data.name,
+      channel: p.data.channel,
+      templateId: tpl.id,
+      channelConnectionId: p.data.channelConnectionId ?? null,
+      audience: {
+        tags: p.data.audienceTags,
+        statuses: p.data.audienceStatuses,
+        limit: p.data.audienceLimit,
+      },
+      defaultVariables: p.data.defaultVariables,
+      status,
+      scheduledFor: scheduledForDate,
+      createdByUserId: userId,
+    });
+
+    if (p.data.runNow) {
+      const job: BroadcastRunnerJob = {
+        organizationId: org.id,
+        broadcastId: id,
+      };
+      await safeEnqueue(QUEUES.broadcastRunner, job, { jobId: `bc_${id}` });
+    }
+    revalidatePath(`/app/${p.data.orgSlug}/broadcasts`);
+    return { ok: true, id };
+  } catch (e) {
+    console.error("[createBroadcast] failed:", e);
+    return {
+      error: e instanceof Error ? e.message : "Failed to create broadcast.",
     };
-    await enqueue(QUEUES.broadcastRunner, job, { jobId: `bc:${id}` });
   }
-  revalidatePath(`/app/${p.data.orgSlug}/broadcasts`);
-  return { ok: true, id };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

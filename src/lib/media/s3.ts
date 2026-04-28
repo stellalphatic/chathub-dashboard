@@ -14,6 +14,10 @@ export type S3UploadResult = {
   region: string;
   key: string;
   publicUrl: string;
+  /** Pre-signed HTTPS URL valid for ~24h. Use this when the bucket has
+   *  Block Public Access enabled (which is the AWS default + best practice)
+   *  and an external service like YCloud / Meta needs to GET the object. */
+  signedUrl: string;
 };
 
 function sanitizeFileName(name: string): string {
@@ -163,7 +167,26 @@ export async function uploadToS3(input: S3UploadInput): Promise<S3UploadResult> 
   const publicUrl = `https://${bucket}.s3.${region}.amazonaws.com/${encodeURIComponent(
     key,
   ).replace(/%2F/g, "/")}`;
-  return { bucket, region, key, publicUrl };
+
+  // Always generate a signed URL — providers (YCloud, Meta, ManyChat) need
+  // to GET the file but our buckets typically have Block Public Access on.
+  // 24h expiry covers the conversation window comfortably.
+  let signedUrl = publicUrl;
+  try {
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+    signedUrl = await getSignedUrl(
+      s3,
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
+      { expiresIn: 60 * 60 * 24 }, // 24 hours
+    );
+  } catch (e) {
+    console.warn(
+      "[s3] presign failed; falling back to public URL:",
+      (e as Error).message,
+    );
+  }
+  return { bucket, region, key, publicUrl, signedUrl };
 }
 
 /**

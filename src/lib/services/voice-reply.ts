@@ -68,6 +68,8 @@ export async function maybeSendVoiceReply(opts: {
   if (!tts) return { ok: false, reason: "tts not configured" };
 
   // 2. Upload MP3 to S3 — we need a fetchable URL for the provider.
+  // Use the SIGNED URL (24h) so YCloud / Meta can GET the object even when
+  // the bucket has Block Public Access enabled (the secure default).
   let audioUrl: string;
   try {
     const messageId = randomUUID();
@@ -78,7 +80,7 @@ export async function maybeSendVoiceReply(opts: {
       mimeType: tts.mimeType,
       body: tts.audio,
     });
-    audioUrl = res.publicUrl;
+    audioUrl = res.signedUrl;
   } catch (e) {
     return { ok: false, reason: `s3 upload failed: ${(e as Error).message}` };
   }

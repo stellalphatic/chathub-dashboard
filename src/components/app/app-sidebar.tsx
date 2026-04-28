@@ -198,8 +198,11 @@ export function AppSidebar({
           className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-gradient-to-b from-[rgb(var(--brand-from))] via-[rgb(var(--brand-via))] to-[rgb(var(--brand-to))] opacity-60"
         />
 
-        {/* Logo row — icon stays centered in the collapsed column */}
-        <div className="flex h-[72px] shrink-0 items-center px-3">
+        {/* Logo row — icon stays centered in the collapsed column.
+            Pin button is rendered as an absolutely-positioned overlay so it
+            doesn't take row space — that's why icons don't shift when it
+            appears/disappears. Only visible when expanded. */}
+        <div className="relative flex h-[72px] shrink-0 items-center px-3">
           <Link
             href="/app"
             className="group relative flex h-12 w-full items-center gap-3 rounded-xl px-2 font-semibold hover:bg-[rgb(var(--surface-2))]"
@@ -218,7 +221,7 @@ export function AppSidebar({
             <button
               type="button"
               onClick={togglePin}
-              className="hidden rounded-md p-1.5 text-[rgb(var(--fg-muted))] transition-colors hover:bg-[rgb(var(--surface-2))] hover:text-[rgb(var(--fg))] md:inline-flex"
+              className="absolute right-3 top-1/2 hidden -translate-y-1/2 rounded-md p-1.5 text-[rgb(var(--fg-muted))] transition-colors hover:bg-[rgb(var(--surface-2))] hover:text-[rgb(var(--fg))] md:inline-flex"
               aria-label={pinned ? "Unpin sidebar" : "Pin sidebar open"}
               title={pinned ? "Unpin sidebar" : "Pin sidebar open"}
             >
@@ -233,9 +236,10 @@ export function AppSidebar({
 
         <div className="mx-3 border-b border-[rgb(var(--border))]" />
 
-        {/* Business switcher */}
+        {/* Business switcher — fixed height in BOTH states so nav icons
+            below never shift vertically when the sidebar expands. */}
         {orgs.length > 0 && (
-          <div className="px-3 pb-3 pt-3">
+          <div className="flex h-[88px] shrink-0 flex-col px-3 pt-3">
             {expanded ? (
               <>
                 <p className="mb-1 pl-1 text-[10.5px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
@@ -251,7 +255,7 @@ export function AppSidebar({
               </>
             ) : (
               <div
-                className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] text-xs font-semibold text-[rgb(var(--accent))]"
+                className="mx-auto mt-3 flex h-10 w-10 items-center justify-center rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] text-xs font-semibold text-[rgb(var(--accent))]"
                 title={orgs.find((o) => o.slug === activeSlug)?.name}
               >
                 {(orgs.find((o) => o.slug === activeSlug)?.name ?? "?")
@@ -278,11 +282,17 @@ export function AppSidebar({
             if (section.items.length === 0) return null;
             return (
               <div key={section.label} className="mb-4">
-                {expanded && (
-                  <p className="whitespace-nowrap px-3 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
-                    {section.label}
-                  </p>
-                )}
+                {/* Section label always rendered with fixed height so the
+                    nav items below never shift vertically when collapsing.
+                    Just fades in/out instead of toggling layout. */}
+                <p
+                  className={cn(
+                    "h-5 whitespace-nowrap px-3 text-[10.5px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))] transition-opacity duration-200",
+                    expanded ? "opacity-100" : "opacity-0",
+                  )}
+                >
+                  {section.label}
+                </p>
                 <ul className="space-y-0.5">
                   {section.items.map((item) => {
                     const active =
@@ -346,15 +356,6 @@ export function AppSidebar({
           )}
         </div>
 
-        {/* Expand affordance when collapsed */}
-        {!expanded && (
-          <span
-            aria-hidden
-            className="absolute right-[-10px] top-24 hidden h-9 w-5 items-center justify-center rounded-r-lg border border-l-0 border-[rgb(var(--border))] bg-[rgb(var(--surface))] text-[rgb(var(--fg-subtle))] shadow-sm md:flex"
-          >
-            <PanelLeftOpen className="h-3 w-3" />
-          </span>
-        )}
       </aside>
     </>
   );
