@@ -8,7 +8,7 @@ import {
   ExternalLink,
   KeyRound,
 } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { connectChannelAction } from "@/lib/org-actions";
 import { isStaleServerActionError } from "@/lib/errors";
@@ -34,10 +34,18 @@ export function IntegrationsList({
   orgSlug,
   appOrigin,
   connected,
+  metaVerifyToken,
+  metaAppSecretSet,
 }: {
   orgSlug: string;
   appOrigin: string;
   connected: ConnectedSummary[];
+  /** Platform-wide META_VERIFY_TOKEN — passed in by the server component
+   *  so admins can copy/paste it into Meta's webhook config. */
+  metaVerifyToken?: string | null;
+  /** Whether META_APP_SECRET is set on the platform (we don't expose the
+   *  value, just status). Drives the "set this in Amplify" callout. */
+  metaAppSecretSet?: boolean;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -76,6 +84,8 @@ export function IntegrationsList({
                   onToggle={() =>
                     setOpenId((cur) => (cur === it.id ? null : it.id))
                   }
+                  metaVerifyToken={metaVerifyToken}
+                  metaAppSecretSet={metaAppSecretSet}
                 />
               ))}
             </div>
@@ -93,6 +103,8 @@ function IntegrationCard({
   connected,
   open,
   onToggle,
+  metaVerifyToken,
+  metaAppSecretSet,
 }: {
   integration: Integration;
   orgSlug: string;
@@ -100,6 +112,8 @@ function IntegrationCard({
   connected: boolean;
   open: boolean;
   onToggle: () => void;
+  metaVerifyToken?: string | null;
+  metaAppSecretSet?: boolean;
 }) {
   const webhookUrl = appOrigin
     ? `${appOrigin}${it.webhookPath}`
@@ -184,6 +198,8 @@ function IntegrationCard({
               it={it}
               orgSlug={orgSlug}
               webhookUrl={webhookUrl}
+              metaVerifyToken={metaVerifyToken}
+              metaAppSecretSet={metaAppSecretSet}
             />
           </motion.div>
         ) : null}
@@ -196,10 +212,14 @@ function IntegrationBody({
   it,
   orgSlug,
   webhookUrl,
+  metaVerifyToken,
+  metaAppSecretSet,
 }: {
   it: Integration;
   orgSlug: string;
   webhookUrl: string;
+  metaVerifyToken?: string | null;
+  metaAppSecretSet?: boolean;
 }) {
   const [tab, setTab] = useState<"setup" | "credentials">("setup");
   return (
@@ -236,6 +256,16 @@ function IntegrationBody({
           <p className="mt-2 text-[11px] text-[rgb(var(--fg-subtle))]">{it.webhookHelp}</p>
         ) : null}
       </div>
+
+      {/* Meta-specific helper: surface the platform's verify token + app
+          secret status so admins can paste them straight into Meta's app
+          Webhooks panel without hunting through env vars. */}
+      {it.provider === "meta" && (
+        <MetaVerifyCallout
+          verifyToken={metaVerifyToken ?? null}
+          appSecretSet={Boolean(metaAppSecretSet)}
+        />
+      )}
 
       {/*
         Render BOTH tabs and just hide the inactive one. If we mount/unmount
@@ -307,6 +337,130 @@ function IntegrationBody({
       </div>
     </div>
   );
+}
+
+/**
+ * Renders the platform's `META_VERIFY_TOKEN` (with a copy button + show /
+ * hide toggle) and the status of `META_APP_SECRET`. This is exactly the
+ * pair Meta's webhook config asks for: callback URL + verify token, plus
+ * the app secret used for signature verification on inbound POSTs.
+ *
+ * If META_VERIFY_TOKEN isn't set yet, we generate a one-time random
+ * suggestion the operator can copy → paste into Amplify env → paste into
+ * Meta. We also show the same value in Meta's panel.
+ */
+function MetaVerifyCallout({
+  verifyToken,
+  appSecretSet,
+}: {
+  verifyToken: string | null;
+  appSecretSet: boolean;
+}) {
+  const [showToken, setShowToken] = useState(false);
+  const suggested = useSuggestedToken();
+  const present = Boolean(verifyToken && verifyToken.trim());
+
+  return (
+    <div
+      className={cn(
+        "mb-4 rounded-xl border p-3",
+        present
+          ? "border-[rgb(var(--accent)/0.35)] bg-[rgb(var(--accent)/0.06)]"
+          : "border-amber-500/30 bg-amber-500/10",
+      )}
+    >
+      <div className="mb-2 flex items-center gap-2">
+        <span
+          className={cn(
+            "flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold",
+            present ? "bg-[rgb(var(--accent))] text-white" : "bg-amber-500 text-white",
+          )}
+        >
+          {present ? "✓" : "!"}
+        </span>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-[rgb(var(--fg))]">
+          Meta App → Webhooks → Verify token
+        </p>
+      </div>
+
+      {present ? (
+        <>
+          <p className="mb-2 text-[11px] text-[rgb(var(--fg-muted))]">
+            Paste this value into the <strong>Verify token</strong> field on
+            Meta&apos;s Webhooks panel (alongside the Callback URL above).
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-2.5 py-1.5 font-mono text-[11px] text-[rgb(var(--fg))]">
+              {showToken ? verifyToken : "•".repeat(Math.min(32, verifyToken!.length))}
+            </code>
+            <button
+              type="button"
+              onClick={() => setShowToken((v) => !v)}
+              className="rounded-md border border-[rgb(var(--border))] px-2 py-1 text-[10px] text-[rgb(var(--fg-muted))] hover:bg-[rgb(var(--surface))]"
+            >
+              {showToken ? "Hide" : "Show"}
+            </button>
+            <CopyButton value={verifyToken!} />
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="mb-2 text-[11px] text-[rgb(var(--fg-muted))]">
+            <strong>META_VERIFY_TOKEN</strong> isn&apos;t set on this deployment yet. Pick any random
+            string, set it in Amplify env, and paste the same value into Meta&apos;s
+            <strong> Verify token </strong>field. Suggested random value:
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-lg border border-amber-500/30 bg-[rgb(var(--surface))] px-2.5 py-1.5 font-mono text-[11px] text-[rgb(var(--fg))]">
+              {suggested}
+            </code>
+            <CopyButton value={suggested} />
+          </div>
+          <p className="mt-2 text-[11px] text-[rgb(var(--fg-subtle))]">
+            Then in Amplify console → Hosting → Environment variables, add{" "}
+            <code className="rounded bg-[rgb(var(--surface))] px-1 font-mono">
+              META_VERIFY_TOKEN
+            </code>{" "}
+            with this value, redeploy, refresh this page.
+          </p>
+        </>
+      )}
+
+      <div className="mt-3 flex items-center gap-2 border-t border-[rgb(var(--border))] pt-3 text-[11px]">
+        <span
+          className={cn(
+            "flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold",
+            appSecretSet
+              ? "bg-emerald-500 text-white"
+              : "bg-amber-500 text-white",
+          )}
+        >
+          {appSecretSet ? "✓" : "!"}
+        </span>
+        <span className="text-[rgb(var(--fg-muted))]">
+          <strong>META_APP_SECRET</strong> {appSecretSet ? "is set " : "is NOT set "} —
+          {appSecretSet
+            ? " Inbound POSTs from Meta will be signature-verified."
+            : " Inbound POSTs aren't currently signature-verified. Add it to Amplify env (Meta → App settings → Basic → App secret) for production."}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One-time random suggestion shown when META_VERIFY_TOKEN isn't set yet.
+ * Generated client-side; not stored. Stable per mount (`useMemo`).
+ */
+function useSuggestedToken(): string {
+  return useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const arr = new Uint8Array(24);
+    window.crypto.getRandomValues(arr);
+    return Array.from(arr)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  }, []);
 }
 
 function TabButton({

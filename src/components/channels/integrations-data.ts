@@ -333,12 +333,16 @@ export const INTEGRATIONS: Integration[] = [
         body: "In the Messenger settings you'll see a Token generator. Select the Page and copy the token. Save it below.",
       },
       {
-        title: "Add the webhook URL",
-        body: "Messenger → Webhooks → Add callback URL. Paste the URL above. Set Verify Token = the value you stored in META_VERIFY_TOKEN env. Subscribe to instagram fields: messages, messaging_postbacks, message_deliveries.",
+        title: "Add the webhook URL + verify token",
+        body: "In Meta App → Webhooks (or Instagram API → Configure webhooks): paste the Callback URL shown above, then paste the Verify token from the green box below. Click Verify and save — Meta will GET our endpoint with hub.challenge and we'll respond with the right token.",
       },
       {
-        title: "Set the Meta App Secret",
-        body: "Basic → App Secret → copy. Paste in the META_APP_SECRET env var (ChatHub verifies every POST).",
+        title: "Subscribe to message fields",
+        body: "After verification succeeds, subscribe to: messages, messaging_postbacks, message_deliveries (Messenger) and/or instagram fields: messages, message_reactions, comments (Instagram).",
+      },
+      {
+        title: "Set the Meta App Secret on Amplify",
+        body: "Meta App → Basic → App Secret → copy. In Amplify console → Hosting → Environment variables, add META_APP_SECRET. Redeploy. ChatHub uses it to verify the X-Hub-Signature-256 header on every inbound POST.",
       },
       {
         title: "Submit for App Review",
@@ -446,8 +450,8 @@ export const INTEGRATIONS: Integration[] = [
         body: "Copy the long-lived token from Messenger → Access Tokens.",
       },
       {
-        title: "Register webhook",
-        body: "Messenger → Webhooks → Add callback URL = the URL above. Verify token = META_VERIFY_TOKEN env. Subscribe fields: messages, messaging_postbacks, message_deliveries.",
+        title: "Register webhook + verify token",
+        body: "Messenger → Webhooks → Add callback URL = the URL above. Verify token = the value shown in the green box below. Subscribe fields: messages, messaging_postbacks, message_deliveries.",
       },
       {
         title: "App Review for messages permission",

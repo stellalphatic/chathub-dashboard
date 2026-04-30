@@ -110,6 +110,11 @@ export default async function ChannelsPage({
           channel: r.channel,
           externalId: r.externalId,
         }))}
+        // Surface the platform-wide verify token only to admins so they
+        // can paste it into Meta's webhook config without hunting through
+        // env vars. Server component → safe to read process.env directly.
+        metaVerifyToken={process.env.META_VERIFY_TOKEN ?? null}
+        metaAppSecretSet={Boolean(process.env.META_APP_SECRET)}
       />
     </div>
   );
