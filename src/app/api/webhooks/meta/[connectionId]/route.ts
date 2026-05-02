@@ -136,7 +136,10 @@ export async function POST(
   let enqueued = 0;
   for (const m of messages) {
     try {
-      const ingested = await ingestInboundMessage({ m });
+      const ingested = await ingestInboundMessage({
+        m,
+        forcedChannelConnectionId: connectionId,
+      });
       if (!ingested || ingested.duplicate) continue;
       const job: InboundMessageJob = {
         organizationId: ingested.organizationId,

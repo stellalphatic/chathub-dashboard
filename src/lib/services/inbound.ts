@@ -27,15 +27,45 @@ export type IngestedInbound = {
 export async function ingestInboundMessage(opts: {
   /** Route by provider + channelExternalId to an org + channel_connection. */
   m: NormalizedInboundMessage;
+  /**
+   * When Meta (or another provider) posts to `/webhooks/.../{connectionId}`,
+   * pin routing to that row so multiple tenants on the same channel never
+   * share a fallback match.
+   */
+  forcedChannelConnectionId?: string;
 }): Promise<IngestedInbound | null> {
   const m = opts.m;
 
-  // 1. Find the matching channel_connection by provider + externalId.
+  // 1. Find channel_connection — prefer explicit webhook target (SaaS-safe).
   let conn:
     | (typeof channelConnection.$inferSelect)
     | undefined;
 
-  if (m.channelExternalId) {
+  if (opts.forcedChannelConnectionId) {
+    [conn] = await db
+      .select()
+      .from(channelConnection)
+      .where(eq(channelConnection.id, opts.forcedChannelConnectionId))
+      .limit(1);
+    if (
+      conn &&
+      (conn.provider !== m.provider ||
+        (m.channel && conn.channel !== m.channel))
+    ) {
+      console.warn(
+        `[inbound] forcedChannelConnectionId=${opts.forcedChannelConnectionId} mismatches payload provider/channel; dropping`,
+      );
+      return null;
+    }
+    if (opts.forcedChannelConnectionId && !conn) {
+      console.warn(
+        `[inbound] unknown forcedChannelConnectionId=${opts.forcedChannelConnectionId}`,
+      );
+      return null;
+    }
+  }
+
+  if (!conn && m.channelExternalId) {
     [conn] = await db
       .select()
       .from(channelConnection)
@@ -47,8 +77,9 @@ export async function ingestInboundMessage(opts: {
       )
       .limit(1);
   }
-  if (!conn) {
-    // Fallback: any connection of this provider + channel (single-tenant dev).
+  if (!conn && !opts.forcedChannelConnectionId) {
+    // Fallback: any connection of this provider + channel (single-tenant dev
+    // or legacy `/api/webhooks/meta` without path id — avoid for multi-tenant prod).
     [conn] = await db
       .select()
       .from(channelConnection)

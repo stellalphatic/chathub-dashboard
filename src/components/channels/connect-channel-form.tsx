@@ -41,16 +41,15 @@ const COMBOS: Combo[] = [
     channel: "instagram",
     provider: "meta",
     label: "Instagram · Meta Graph",
-    help: "Direct Meta Graph API for Instagram DMs.",
-    configFields: [{ key: "igUserId", label: "IG user ID", placeholder: "17841..." }],
-    secretFields: [
-      { key: "accessToken", label: "Page access token", placeholder: "EAAG..." },
-      { key: "appSecret", label: "Meta app secret", placeholder: "" },
+    help: "Direct Meta Graph API for Instagram DMs (use Integrations page for full SaaS flow).",
+    configFields: [
+      { key: "instagramAppId", label: "Instagram App ID", placeholder: "from Settings → Basic" },
+      { key: "igUserId", label: "IG Business Account ID (optional)", placeholder: "auto-detect" },
     ],
-    externalIdField: {
-      label: "IG user ID (same as config)",
-      placeholder: "17841...",
-    },
+    secretFields: [
+      { key: "appSecret", label: "Instagram App Secret", placeholder: "" },
+      { key: "accessToken", label: "User / Page access token", placeholder: "EAAG…" },
+    ],
   },
   {
     key: "messenger-meta",
@@ -58,10 +57,13 @@ const COMBOS: Combo[] = [
     provider: "meta",
     label: "Messenger · Meta Graph",
     help: "Direct Meta Graph API for Facebook page Messenger.",
-    configFields: [{ key: "pageId", label: "Facebook Page ID", placeholder: "1234567890" }],
+    configFields: [
+      { key: "facebookAppId", label: "Meta App ID", placeholder: "from Settings → Basic" },
+      { key: "pageId", label: "Facebook Page ID", placeholder: "1234567890" },
+    ],
     secretFields: [
-      { key: "accessToken", label: "Page access token" },
       { key: "appSecret", label: "Meta app secret" },
+      { key: "accessToken", label: "Page access token" },
     ],
     externalIdField: { label: "Page ID", placeholder: "same as config" },
   },

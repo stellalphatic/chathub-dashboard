@@ -264,22 +264,24 @@ function IntegrationBody({
         />
       </div>
 
-      {/* Webhook URL strip (always visible under the tabs) */}
-      <div className="mb-4 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-3">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
-          Paste this URL in your{" "}
-          <span className="text-[rgb(var(--fg))]">{it.title.split(" ")[0]}</span> flow / webhook
-        </p>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <code className="min-w-0 flex-1 truncate rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-2.5 py-1.5 font-mono text-[11px] text-[rgb(var(--fg))]">
-            {webhookUrl}
-          </code>
-          <CopyButton value={webhookUrl} />
+      {/* Provider webhook URL — Meta uses per-connection URLs only (see callout). */}
+      {it.provider !== "meta" ? (
+        <div className="mb-4 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
+            Paste this URL in your{" "}
+            <span className="text-[rgb(var(--fg))]">{it.title.split(" ")[0]}</span> flow / webhook
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-2.5 py-1.5 font-mono text-[11px] text-[rgb(var(--fg))]">
+              {webhookUrl}
+            </code>
+            <CopyButton value={webhookUrl} />
+          </div>
+          {it.webhookHelp ? (
+            <p className="mt-2 text-[11px] text-[rgb(var(--fg-subtle))]">{it.webhookHelp}</p>
+          ) : null}
         </div>
-        {it.webhookHelp ? (
-          <p className="mt-2 text-[11px] text-[rgb(var(--fg-subtle))]">{it.webhookHelp}</p>
-        ) : null}
-      </div>
+      ) : null}
 
       {/* Meta-specific helper. AFTER you save credentials, this shows the
           PER-BUSINESS webhook URL + verify token to paste into THAT
@@ -288,6 +290,7 @@ function IntegrationBody({
       {it.provider === "meta" && (
         <MetaVerifyCallout
           appOrigin={appOrigin}
+          metaChannel={it.channel === "messenger" ? "messenger" : "instagram"}
           existingConnection={existingConnection}
           platformVerifyToken={metaVerifyToken ?? null}
           platformAppSecretSet={Boolean(metaAppSecretSet)}
@@ -386,11 +389,13 @@ function IntegrationBody({
  */
 function MetaVerifyCallout({
   appOrigin,
+  metaChannel,
   existingConnection,
   platformVerifyToken,
   platformAppSecretSet,
 }: {
   appOrigin: string;
+  metaChannel: "instagram" | "messenger";
   existingConnection?: ConnectedSummary;
   platformVerifyToken: string | null;
   platformAppSecretSet: boolean;
@@ -433,10 +438,19 @@ function MetaVerifyCallout({
       {isConnected ? (
         <>
           <p className="mb-2 text-[11px] text-[rgb(var(--fg-muted))]">
-            Each business uses its own Meta app. These two values are unique
-            to <strong>this connection</strong> — paste them into Meta →
-            Instagram → <strong>API setup with Instagram Login</strong> →{" "}
-            <strong>Configure webhooks</strong> (same panel for test and production).
+            Each tenant uses its own Meta app. These values are unique to{" "}
+            <strong>this connection</strong> — paste them into{" "}
+            {metaChannel === "instagram" ? (
+              <>
+                Meta → Instagram → <strong>API setup with Instagram Login</strong> →{" "}
+                <strong>Configure webhooks</strong>
+              </>
+            ) : (
+              <>
+                Meta → Messenger → <strong>Webhooks</strong>
+              </>
+            )}{" "}
+            (same callback URL for Development and Live).
           </p>
 
           <div className="space-y-2">
@@ -481,11 +495,20 @@ function MetaVerifyCallout({
       ) : (
         <>
           <p className="text-[11px] text-[rgb(var(--fg-muted))]">
-            Step 1 — paste your <strong>long-lived Page access token</strong> and{" "}
-            <strong>App Secret</strong> (optional: Instagram Business Account ID
-            if auto-detect fails). Click <em>Save &amp; connect</em>. Step 2 —
-            copy the <strong>Callback URL</strong> and <strong>Verify token</strong>{" "}
-            shown here into Meta&apos;s Configure webhooks panel, then Verify and save.
+            {metaChannel === "instagram" ? (
+              <>
+                Step 1 — enter <strong>Instagram App ID</strong>, <strong>Instagram App Secret</strong>, and{" "}
+                <strong>access token</strong> (optional: Instagram Business Account ID if auto-detect fails).
+              </>
+            ) : (
+              <>
+                Step 1 — enter <strong>Meta App ID</strong>, <strong>Page ID</strong>, <strong>App Secret</strong>, and{" "}
+                <strong>Page access token</strong>.
+              </>
+            )}{" "}
+            Click <em>Save &amp; connect</em>. Step 2 — copy the per-tenant{" "}
+            <strong>Callback URL</strong> (<code className="font-mono text-[10px]">/api/webhooks/meta/&lt;connectionId&gt;</code>) and{" "}
+            <strong>Verify token</strong> into Meta. Each business is isolated by <strong>connection id</strong> in the path — scalable for SaaS.
           </p>
           {(platformVerifyToken || platformAppSecretSet) && (
             <p className="mt-2 text-[10.5px] text-[rgb(var(--fg-subtle))]">

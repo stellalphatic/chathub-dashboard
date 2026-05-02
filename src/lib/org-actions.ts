@@ -21,6 +21,7 @@ import {
 import { invalidateBotConfigCache } from "@/lib/cache/bot-config";
 import { encryptJSON } from "@/lib/encryption";
 import { getOrgAccess } from "@/lib/org-access";
+import { exchangeForLongLivedUserToken } from "@/lib/providers/meta-token";
 import { resolveInstagramBusinessUserId } from "@/lib/providers/meta-resolve";
 import {
   enqueue,
@@ -309,19 +310,31 @@ export async function connectChannelAction(
     if (!gate.ok) return { error: gate.error };
     const { org } = gate;
 
-    let secretsCiphertext: string;
-    try {
-      secretsCiphertext = encryptJSON(p.data.secrets);
-    } catch (e) {
-      console.error("[connectChannel] encrypt failed:", e);
-      return {
-        error:
-          "Encryption is not configured on the server (ENCRYPTION_KEY missing). Ask your platform admin to set it.",
-      };
-    }
-
     const id = randomUUID();
     const mergedConfig: Record<string, unknown> = { ...p.data.config };
+
+    if (p.data.provider === "meta" && p.data.channel === "instagram") {
+      const appId = String(mergedConfig.instagramAppId ?? "").trim();
+      if (!appId) {
+        return {
+          error:
+            "Instagram App ID is required (Meta → Settings → Basic → App ID, or the numeric Instagram App ID from API setup).",
+        };
+      }
+    }
+    if (p.data.provider === "meta" && p.data.channel === "messenger") {
+      const appId = String(mergedConfig.facebookAppId ?? "").trim();
+      if (!appId) {
+        return {
+          error: "Meta / Facebook App ID is required (Meta → Settings → Basic → App ID).",
+        };
+      }
+      const pageId = String(mergedConfig.pageId ?? "").trim();
+      if (!pageId) {
+        return { error: "Facebook Page ID is required." };
+      }
+    }
+
     if (
       p.data.provider === "meta" &&
       p.data.channel === "instagram" &&
@@ -329,7 +342,7 @@ export async function connectChannelAction(
     ) {
       const token = String(p.data.secrets.accessToken ?? "").trim();
       if (!token) {
-        return { error: "Instagram requires a Page access token to auto-detect the account ID." };
+        return { error: "Instagram requires an access token to auto-detect the Business Account ID." };
       }
       const resolved = await resolveInstagramBusinessUserId(token);
       if (!resolved) {
@@ -339,6 +352,37 @@ export async function connectChannelAction(
         };
       }
       mergedConfig.igUserId = resolved;
+    }
+
+    const secretsForStorage: Record<string, string> = { ...p.data.secrets };
+    if (p.data.provider === "meta") {
+      const appSecret = String(secretsForStorage.appSecret ?? "").trim();
+      const token = String(secretsForStorage.accessToken ?? "").trim();
+      const appId =
+        p.data.channel === "instagram"
+          ? String(mergedConfig.instagramAppId ?? "").trim()
+          : String(mergedConfig.facebookAppId ?? "").trim();
+      if (appId && appSecret && token) {
+        const exchanged = await exchangeForLongLivedUserToken({
+          appId,
+          appSecret,
+          shortLivedToken: token,
+        });
+        if (exchanged) {
+          secretsForStorage.accessToken = exchanged.accessToken;
+        }
+      }
+    }
+
+    let secretsCiphertext: string;
+    try {
+      secretsCiphertext = encryptJSON(secretsForStorage);
+    } catch (e) {
+      console.error("[connectChannel] encrypt failed:", e);
+      return {
+        error:
+          "Encryption is not configured on the server (ENCRYPTION_KEY missing). Ask your platform admin to set it.",
+      };
     }
 
     await db.insert(channelConnection).values({
