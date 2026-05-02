@@ -167,21 +167,23 @@ export async function fetchInstagramLoginParticipant(
   const sid = instagramScopedUserId.trim();
   const token = instagramUserAccessToken.trim();
   if (!sid || !token) return null;
-  const url = `${IG_GRAPH}/${encodeURIComponent(sid)}?fields=username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`;
+  // Instagram Login User Profile API uses `profile_pic` (not Graph `profile_picture_url`).
+  // See: developers.facebook.com/.../messaging-api/user-profile
+  const url = `${IG_GRAPH}/${encodeURIComponent(sid)}?fields=name,username,profile_pic&access_token=${encodeURIComponent(token)}`;
   const res = await fetch(url);
   if (!res.ok) return null;
   const j = (await res.json()) as {
     username?: string;
     name?: string;
+    profile_pic?: string;
     profile_picture_url?: string;
   };
   let label: string | null = null;
   if (j.username) label = `@${String(j.username).replace(/^@/, "")}`;
   else if (j.name) label = j.name;
+  const picRaw = j.profile_pic ?? j.profile_picture_url;
   const profilePicUrl =
-    typeof j.profile_picture_url === "string" && j.profile_picture_url.startsWith("http")
-      ? j.profile_picture_url
-      : null;
+    typeof picRaw === "string" && picRaw.startsWith("http") ? picRaw : null;
   if (!label && !profilePicUrl) return null;
   return { label, profilePicUrl };
 }

@@ -187,13 +187,7 @@ async function postRoutingSideEffects(
         ),
       )
       .limit(1);
-    if (
-      cust &&
-      !cust.displayName &&
-      cust.phoneE164 &&
-      !cust.phoneE164.startsWith("ext:") &&
-      sender.fetchContactName
-    ) {
+    if (cust && !cust.displayName && cust.phoneE164 && sender.fetchContactName) {
       const fetched = await sender.fetchContactName(cust.phoneE164);
       if (fetched) {
         await db

@@ -94,6 +94,45 @@ export async function handleInboundMessage(job: Job<InboundMessageJob>) {
     })();
   }
 
+  if (p.channel === "instagram" && p.fromExternalId) {
+    void (async () => {
+      try {
+        const conn = await loadChannelConnection(p.channelConnectionId);
+        if (!conn.sender.fetchContactName) return;
+        const { customer } = await import("../../src/db/schema");
+        const { and: andOp, eq: eqOp } = await import("drizzle-orm");
+        const phoneSurrogate = `ext:instagram:${p.fromExternalId}`;
+        const [cust] = await db
+          .select({ id: customer.id, displayName: customer.displayName })
+          .from(customer)
+          .where(
+            andOp(
+              eqOp(customer.organizationId, p.organizationId),
+              eqOp(customer.phoneE164, phoneSurrogate),
+            ),
+          )
+          .limit(1);
+        if (cust && !cust.displayName) {
+          const fetched = await conn.sender.fetchContactName(phoneSurrogate);
+          if (fetched) {
+            await db
+              .update(customer)
+              .set({ displayName: fetched, updatedAt: new Date() })
+              .where(eqOp(customer.id, cust.id));
+            console.log(
+              `[inbound] back-filled displayName="${fetched}" for ${phoneSurrogate}`,
+            );
+          }
+        }
+      } catch (e) {
+        console.warn(
+          "[inbound] instagram fetchContactName failed:",
+          (e as Error).message,
+        );
+      }
+    })();
+  }
+
   // Mirror provider CDN media to our S3 bucket (fire-and-forget — retries via BullMQ).
   if (row.mediaUrl && isS3Configured()) {
     const archiveJob: MediaArchiveJob = {

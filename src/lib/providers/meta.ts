@@ -1,4 +1,9 @@
 import { createHmac, timingSafeEqual } from "crypto";
+import {
+  fetchInstagramLoginParticipant,
+  fetchInstagramScopedParticipant,
+  resolveInstagramPageAccessToken,
+} from "./meta-resolve";
 import type {
   ChannelSender,
   NormalizedInboundMessage,
@@ -95,12 +100,41 @@ async function postInstagramDm(
   return res.json() as Promise<Record<string, unknown>>;
 }
 
+async function instagramContactLabelFromPhoneKey(
+  secrets: MetaSecrets,
+  config: MetaIgConfig,
+  phoneE164: string,
+): Promise<string | undefined> {
+  const m = /^ext:instagram:(.+)$/.exec(phoneE164.trim());
+  const sid = m?.[1]?.trim() ?? "";
+  if (!sid) return undefined;
+  const graph: InstagramMessagingGraph = config.messagingGraph ?? "facebook";
+  if (graph === "instagram") {
+    const part = await fetchInstagramLoginParticipant(secrets.accessToken, sid);
+    return part?.label ?? undefined;
+  }
+  const pageTok = await resolveInstagramPageAccessToken(
+    secrets.accessToken,
+    config.igUserId,
+  );
+  const tok = (pageTok ?? secrets.accessToken).trim();
+  const part = await fetchInstagramScopedParticipant(tok, sid);
+  return part?.label ?? undefined;
+}
+
 export function createInstagramSender(
   secrets: MetaSecrets,
   config: MetaIgConfig,
 ): ChannelSender {
   const graph: InstagramMessagingGraph = config.messagingGraph ?? "facebook";
   return {
+    async fetchContactName(phoneE164: string): Promise<string | undefined> {
+      try {
+        return await instagramContactLabelFromPhoneKey(secrets, config, phoneE164);
+      } catch {
+        return undefined;
+      }
+    },
     async sendText(input: SendTextInput): Promise<SendResult> {
       if (!input.toExternalId) {
         throw new Error("Instagram sendText requires toExternalId (IG-scoped ID)");

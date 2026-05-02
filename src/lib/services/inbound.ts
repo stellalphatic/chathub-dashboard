@@ -10,8 +10,11 @@ import {
 } from "@/db/schema";
 import { decryptJSON } from "@/lib/encryption";
 import {
+  fetchInstagramBusinessAccountProfile,
+  fetchInstagramBusinessMeInstagramGraph,
   fetchInstagramLoginParticipant,
   fetchInstagramScopedParticipant,
+  probeInstagramLoginToken,
   resolveInstagramPageAccessToken,
 } from "@/lib/providers/meta-resolve";
 import type { NormalizedInboundMessage } from "@/lib/providers/types";
@@ -25,6 +28,39 @@ export type IngestedInbound = {
   duplicate: boolean;
   channel: string;
 };
+
+/** When config never got @username (e.g. legacy rows), fill from Graph on inbound. */
+async function maybeBackfillInstagramBusinessChannelLabels(
+  connectionId: string,
+  cfg: Record<string, unknown>,
+  sec: Record<string, string>,
+): Promise<void> {
+  if (String(cfg.instagramUsername ?? "").trim()) return;
+  const igBiz = String(cfg.igUserId ?? "").trim();
+  const rawTok = String(sec.accessToken ?? "").trim();
+  if (!igBiz || !rawTok) return;
+  const patch: Record<string, unknown> = {};
+  const pageTok = await resolveInstagramPageAccessToken(rawTok, igBiz);
+  if (pageTok) {
+    const prof = await fetchInstagramBusinessAccountProfile(pageTok, igBiz);
+    if (prof?.username) patch.instagramUsername = prof.username;
+    if (prof?.name) patch.instagramBusinessName = prof.name;
+    if (prof?.username || prof?.name) patch.messagingGraph = "facebook";
+  } else if (await probeInstagramLoginToken(rawTok)) {
+    const self = await fetchInstagramBusinessMeInstagramGraph(rawTok);
+    if (self?.username) patch.instagramUsername = self.username;
+    if (self?.name) patch.instagramBusinessName = self.name;
+    if (self?.username || self?.name) patch.messagingGraph = "instagram";
+  }
+  if (Object.keys(patch).length === 0) return;
+  await db
+    .update(channelConnection)
+    .set({
+      config: { ...cfg, ...patch },
+      updatedAt: new Date(),
+    })
+    .where(eq(channelConnection.id, connectionId));
+}
 
 /**
  * Upsert a webhook event for idempotency, then upsert customer + conversation
@@ -129,6 +165,7 @@ export async function ingestInboundMessage(opts: {
         }
         if (part?.label) inboundDisplayName = inboundDisplayName ?? part.label;
         if (part?.profilePicUrl) inboundProfilePicUrl = part.profilePicUrl;
+        await maybeBackfillInstagramBusinessChannelLabels(conn.id, cfg, sec);
       }
     } catch (e) {
       console.warn("[inbound] instagram profile enrich failed:", e);

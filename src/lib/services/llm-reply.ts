@@ -132,7 +132,7 @@ export async function replyToConversation(p: {
   // Try to back-fill displayName via provider lookup if we don't have one.
   // Cached on the customer row so we only call the provider once.
   let displayName = cust?.displayName ?? "";
-  if (!displayName && cust?.phoneE164 && !cust.phoneE164.startsWith("ext:")) {
+  if (!displayName && cust?.phoneE164) {
     try {
       const channelConnId = conv.channelConnectionId;
       if (channelConnId) {
