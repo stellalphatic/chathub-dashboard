@@ -106,13 +106,16 @@ export default async function ChannelsPage({
         orgSlug={orgSlug}
         appOrigin={appOrigin}
         connected={rows.map((r) => ({
+          id: r.id,
           provider: r.provider,
           channel: r.channel,
           externalId: r.externalId,
+          webhookSecret: r.webhookSecret,
+          label: r.label,
         }))}
-        // Surface the platform-wide verify token only to admins so they
-        // can paste it into Meta's webhook config without hunting through
-        // env vars. Server component → safe to read process.env directly.
+        // Platform-wide values are now optional fallbacks — used only by
+        // the legacy /api/webhooks/meta URL. New businesses get unique
+        // per-connection webhook URLs at /api/webhooks/meta/<id>.
         metaVerifyToken={process.env.META_VERIFY_TOKEN ?? null}
         metaAppSecretSet={Boolean(process.env.META_APP_SECRET)}
       />

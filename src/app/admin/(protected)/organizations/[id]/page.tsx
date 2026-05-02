@@ -56,9 +56,12 @@ export default async function OrganizationAdminPage({
 
   const connectedChannels = await db
     .select({
+      id: channelConnection.id,
       provider: channelConnection.provider,
       channel: channelConnection.channel,
       externalId: channelConnection.externalId,
+      webhookSecret: channelConnection.webhookSecret,
+      label: channelConnection.label,
     })
     .from(channelConnection)
     .where(eq(channelConnection.organizationId, org.id));
@@ -267,6 +270,8 @@ export default async function OrganizationAdminPage({
                   orgSlug={org.slug}
                   appOrigin={appOrigin}
                   connected={connectedChannels}
+                  metaVerifyToken={process.env.META_VERIFY_TOKEN ?? null}
+                  metaAppSecretSet={Boolean(process.env.META_APP_SECRET)}
                 />
               </CardContent>
             </Card>

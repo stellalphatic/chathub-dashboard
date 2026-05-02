@@ -94,7 +94,8 @@ export async function embed(input: EmbedInput): Promise<EmbedOutput> {
       errs.push(`openai: ${e instanceof Error ? e.message : e}`);
     }
   }
-  throw new Error(
-    `No embedding provider succeeded. Errors: ${errs.join(" | ") || "no API key configured"}`,
-  );
+  const detail =
+    errs.join(" | ") ||
+    "no API key configured — set GEMINI_API_KEY or OPENAI_API_KEY on the machine that runs BullMQ workers (EC2/docker), not only on Amplify; embeddings never run in the Next.js Lambda.";
+  throw new Error(`No embedding provider succeeded. ${detail}`);
 }

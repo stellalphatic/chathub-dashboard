@@ -21,6 +21,7 @@ import {
 import { invalidateBotConfigCache } from "@/lib/cache/bot-config";
 import { encryptJSON } from "@/lib/encryption";
 import { getOrgAccess } from "@/lib/org-access";
+import { resolveInstagramBusinessUserId } from "@/lib/providers/meta-resolve";
 import {
   enqueue,
   QUEUES,
@@ -320,14 +321,38 @@ export async function connectChannelAction(
     }
 
     const id = randomUUID();
+    const mergedConfig: Record<string, unknown> = { ...p.data.config };
+    if (
+      p.data.provider === "meta" &&
+      p.data.channel === "instagram" &&
+      !(String(mergedConfig.igUserId ?? "").trim())
+    ) {
+      const token = String(p.data.secrets.accessToken ?? "").trim();
+      if (!token) {
+        return { error: "Instagram requires a Page access token to auto-detect the account ID." };
+      }
+      const resolved = await resolveInstagramBusinessUserId(token);
+      if (!resolved) {
+        return {
+          error:
+            "Could not auto-detect Instagram Business Account ID from your token. Paste the numeric ID from Meta → Instagram → API setup (Instagram account row), or use a Page access token from a Page linked to Instagram.",
+        };
+      }
+      mergedConfig.igUserId = resolved;
+    }
+
     await db.insert(channelConnection).values({
       id,
       organizationId: org.id,
       channel: p.data.channel,
       provider: p.data.provider,
       label: p.data.label ?? null,
-      externalId: p.data.externalId ?? null,
-      config: p.data.config,
+      externalId:
+        p.data.externalId ??
+        (typeof mergedConfig.igUserId === "string" ? mergedConfig.igUserId : null) ??
+        (typeof mergedConfig.pageId === "string" ? mergedConfig.pageId : null) ??
+        null,
+      config: mergedConfig,
       secretsCiphertext,
       webhookSecret: randomBytes(24).toString("hex"),
     });

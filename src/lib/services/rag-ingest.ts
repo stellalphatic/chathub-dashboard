@@ -46,7 +46,11 @@ export async function ingestDocument(opts: {
       mimeType: doc.mimeType ?? "text/plain",
       filename: doc.title,
     });
-    if (!raw.trim()) throw new Error("parsed text is empty");
+    if (!raw.trim()) {
+      throw new Error(
+        "parsed text is empty — the file has no extractable text. If this is a PDF, it may be a scanned image (needs OCR outside ChatHub) or a protected/encoded PDF; try exporting a searchable PDF or paste plain text.",
+      );
+    }
 
     // 3. Chunk.
     const chunks = chunkText(raw);

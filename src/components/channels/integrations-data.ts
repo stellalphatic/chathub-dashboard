@@ -317,62 +317,71 @@ export const INTEGRATIONS: Integration[] = [
     status: "requires_approval",
     webhookPath: "/api/webhooks/meta",
     webhookHelp:
-      "Meta pings this URL with a GET handshake using META_VERIFY_TOKEN. POSTs are signed with META_APP_SECRET.",
+      "After Save & connect, copy the Callback URL + Verify Token from this card into Meta → Instagram → API setup with Instagram Login → Configure webhooks. Each business has its own URL (includes connection id). POSTs are verified with the App Secret you save below.",
     docsUrl: "https://developers.facebook.com/docs/messenger-platform/instagram",
+    hideLabelField: true,
     steps: [
       {
         title: "Create a Meta App",
-        body: "developers.facebook.com → My Apps → Create App → Business. Add the Messenger product.",
+        body: "developers.facebook.com → My Apps → Create App → Business. Add the Instagram product and open **Instagram → API setup with Instagram Login**.",
       },
       {
         title: "Link the Instagram Professional account",
-        body: "Messenger settings → Instagram Settings → Add or Remove Pages → select the Facebook Page connected to the Instagram account.",
+        body: "Instagram API setup → Add account → log in with the Instagram Business / Creator account (must be linked to a Facebook Page).",
       },
       {
-        title: "Generate a Page access token",
-        body: "In the Messenger settings you'll see a Token generator. Select the Page and copy the token. Save it below.",
+        title: "Generate a long-lived Page access token",
+        body: "In API setup, generate a token for the Page connected to Instagram. Long-lived tokens usually start with **EAAG…**. Paste it below — ChatHub uses it only to send/receive on your behalf.",
       },
       {
-        title: "Add the webhook URL + verify token",
-        body: "In Meta App → Webhooks (or Instagram API → Configure webhooks): paste the Callback URL shown above, then paste the Verify token from the green box below. Click Verify and save — Meta will GET our endpoint with hub.challenge and we'll respond with the right token.",
+        title: "Copy your App Secret (webhook signatures)",
+        body: "Meta App → **Settings → Basic → App Secret** (same value shown under Instagram API setup as “Instagram app secret” in some dashboards). Used to verify **X-Hub-Signature-256** on every inbound webhook — treat it like a password. Each business pastes **its own** secret; we encrypt it at rest.",
       },
       {
-        title: "Subscribe to message fields",
-        body: "After verification succeeds, subscribe to: messages, messaging_postbacks, message_deliveries (Messenger) and/or instagram fields: messages, message_reactions, comments (Instagram).",
+        title: "Save credentials + connect",
+        body: "Click **Save & connect** below. This page then shows your **Callback URL** and **Verify Token** — same pair for Development and Live (Meta uses one webhook config for the Instagram API).",
       },
       {
-        title: "Set the Meta App Secret on Amplify",
-        body: "Meta App → Basic → App Secret → copy. In Amplify console → Hosting → Environment variables, add META_APP_SECRET. Redeploy. ChatHub uses it to verify the X-Hub-Signature-256 header on every inbound POST.",
+        title: "Configure webhooks in Meta",
+        body: "Instagram → API setup → **Configure webhooks**: Callback URL and Verify Token = the values shown on this card after save. Subscribe to **messages** (and optionally reactions). Click **Verify and save** in Meta.",
       },
       {
-        title: "Submit for App Review",
-        body: "Meta requires App Review for instagram_manage_messages. Without approval, only testers can DM. For production you'll wait 1–4 weeks.",
+        title: "Subscribe to fields",
+        body: "Once Meta says verified, subscribe to: messages, message_reactions, messaging_postbacks.",
       },
       {
-        title: "Save credentials",
-        body: "Paste Page access token + IG user ID in Credentials. Save & connect.",
+        title: "Submit for App Review (production only)",
+        body: "Meta requires App Review for instagram_manage_messages. In Development mode only Testers (Roles tab) can DM. Plan 1–4 weeks for review.",
       },
     ],
     configFields: [
-      { key: "igUserId", label: "Instagram user ID", placeholder: "17841..." },
+      {
+        key: "igUserId",
+        label: "Instagram Business Account ID (optional)",
+        placeholder: "Leave blank to auto-detect from token",
+        help: "Numeric **Instagram-scoped user ID** for the professional account (Meta → Instagram → API setup, account table). If you use a Page access token from the linked Page, you can leave this blank — we fetch it from Graph on save.",
+        required: false,
+      },
     ],
     secretFields: [
       {
         key: "accessToken",
-        label: "Page access token",
+        label: "Instagram / Page access token (long-lived)",
         type: "password",
         placeholder: "EAAG…",
+        help: "Long-lived **Page** token with `instagram_manage_messages` (and related) permissions. This is what NordX labels “Instagram user access token” in some flows — in Meta it is generated from the Page linked to Instagram.",
+        required: true,
       },
       {
         key: "appSecret",
-        label: "Meta app secret",
+        label: "Instagram / Meta App Secret",
         type: "password",
+        placeholder: "Click Show in Meta → Settings → Basic",
+        help: "Used to verify **X-Hub-Signature-256** on webhooks. Same secret as **App Secret** under App settings (Instagram API setup may label it “Instagram app secret”).",
+        required: true,
       },
     ],
-    externalIdField: {
-      label: "Instagram user ID (routing)",
-      placeholder: "same as the config field",
-    },
+    // No externalIdField — `igUserId` is auto-used as the routing key.
   },
 
   // ── Facebook Messenger ────────────────────────────────────────────────────
@@ -435,47 +444,71 @@ export const INTEGRATIONS: Integration[] = [
     colorCls: "text-blue-500",
     status: "requires_approval",
     webhookPath: "/api/webhooks/meta",
+    webhookHelp:
+      "After Save & connect, use the Callback URL + Verify Token from this card in Messenger → Webhooks (per-business URL includes your connection id).",
     docsUrl: "https://developers.facebook.com/docs/messenger-platform",
+    hideLabelField: true,
     steps: [
       {
         title: "Create a Meta App and add Messenger",
-        body: "developers.facebook.com → My Apps → Create App. Add Messenger product.",
+        body: "developers.facebook.com → My Apps → Create App → Business. Add the Messenger product.",
       },
       {
-        title: "Subscribe the Page",
-        body: "Messenger → Settings → Add Pages → select the Facebook Page.",
+        title: "Subscribe the Facebook Page",
+        body: "Messenger → Settings → Add or Remove Pages → select the Page you want to connect.",
       },
       {
-        title: "Generate a Page access token",
-        body: "Copy the long-lived token from Messenger → Access Tokens.",
+        title: "Generate a long-lived Page access token",
+        body: "Messenger → Access Tokens → pick the Page → copy the token. Paste it below.",
       },
       {
-        title: "Register webhook + verify token",
-        body: "Messenger → Webhooks → Add callback URL = the URL above. Verify token = the value shown in the green box below. Subscribe fields: messages, messaging_postbacks, message_deliveries.",
+        title: "Copy your Meta App Secret",
+        body: "Meta App → Settings → Basic → App Secret → click Show → copy. Paste it below. Each business uses ITS OWN app secret — encrypted with AES-256-GCM in our database.",
+      },
+      {
+        title: "Save credentials below + click Save & connect",
+        body: "After saving, this card will show a per-business webhook URL + verify token unique to your connection. Paste those into Meta in the next step.",
+      },
+      {
+        title: "Register webhook in Meta",
+        body: "Messenger → Webhooks → Add callback URL = the per-business URL shown after you save. Verify token = the per-business token shown after you save. Click Verify and save.",
+      },
+      {
+        title: "Subscribe to fields",
+        body: "Subscribe to: messages, messaging_postbacks, message_deliveries.",
       },
       {
         title: "App Review for messages permission",
-        body: "Meta requires App Review to message users outside of 24 h. Plan for 1–4 weeks.",
-      },
-      {
-        title: "Save credentials",
-        body: "Page ID + Page access token + App secret → Save & connect.",
+        body: "Meta requires App Review to message users outside the 24-hour customer-service window. Plan 1–4 weeks.",
       },
     ],
     configFields: [
-      { key: "pageId", label: "Facebook Page ID", placeholder: "1234567890" },
+      {
+        key: "pageId",
+        label: "Facebook Page ID",
+        placeholder: "1234567890",
+        help: "The Page's numeric ID (Page → About → Page Transparency).",
+        required: true,
+      },
     ],
     secretFields: [
       {
         key: "accessToken",
         label: "Page access token",
         type: "password",
+        placeholder: "EAAG…",
+        help: "Long-lived Page token from Messenger → Access Tokens.",
+        required: true,
       },
-      { key: "appSecret", label: "Meta app secret", type: "password" },
+      {
+        key: "appSecret",
+        label: "Meta App Secret",
+        type: "password",
+        placeholder: "32-char hex string",
+        help: "Meta App → Settings → Basic → App Secret. Used to verify inbound webhook signatures from THIS business's Meta app.",
+        required: true,
+      },
     ],
-    externalIdField: {
-      label: "Page ID (routing)",
-      placeholder: "same as the config field",
-    },
+    // No externalIdField — `pageId` is auto-used as the routing key.
   },
 ];

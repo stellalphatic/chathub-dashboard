@@ -61,7 +61,10 @@ export default async function KnowledgePage({
         </h2>
         <p className="mt-1 text-sm text-[rgb(var(--fg-muted))]">
           Upload PDFs, docs, and FAQs. Files are chunked, embedded, and stored in your vector DB.
-          Only your bot can retrieve from them — no cross-tenant leaks.
+          Only your bot can retrieve from them — no cross-tenant leaks. Embedding runs on your{" "}
+          <strong>worker</strong> host: set <code className="text-xs">GEMINI_API_KEY</code> or{" "}
+          <code className="text-xs">OPENAI_API_KEY</code> there (Groq cannot embed). Scanned PDFs
+          without a text layer cannot be indexed until you OCR or export text.
         </p>
       </div>
 

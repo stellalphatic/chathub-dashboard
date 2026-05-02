@@ -9,20 +9,22 @@ import type {
 /**
  * Meta Graph API adapter for Instagram DMs and Facebook Messenger (direct).
  *
- * Secrets: { accessToken: string; appSecret: string }
- * Config:
- *   - for Instagram: { igUserId: string }        (IG Graph API v21+)
- *   - for Messenger: { pageId: string }          (pageId == receiver id)
+ * Secrets: { accessToken: string; appSecret?: string }
+ *   - `accessToken` — long-lived Page access token (required for sends).
+ *   - `appSecret` — App Secret from Meta → Settings → Basic (same secret Meta
+ *     uses for `X-Hub-Signature-256` on webhooks). Stored per connection; the
+ *     legacy platform env `META_APP_SECRET` is only a fallback for `/api/webhooks/meta`.
  *
- * Webhook verification:
- *   - X-Hub-Signature-256: sha256=<hex> over raw request body, signed w/ appSecret
+ * Config:
+ *   - Instagram: { igUserId: string }  — Instagram Business Account ID used in `/{id}/messages`.
+ *   - Messenger: { pageId: string }
  */
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 
 export type MetaSecrets = {
   accessToken: string;
-  appSecret: string;
+  appSecret?: string;
 };
 
 export type MetaIgConfig = {

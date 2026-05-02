@@ -8,7 +8,7 @@ import {
   ExternalLink,
   KeyRound,
 } from "lucide-react";
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { connectChannelAction } from "@/lib/org-actions";
 import { isStaleServerActionError } from "@/lib/errors";
@@ -24,10 +24,15 @@ import {
   type Integration,
 } from "./integrations-data";
 
-type ConnectedSummary = {
+export type ConnectedSummary = {
+  /** channel_connection.id — used to build per-business webhook URLs. */
+  id: string;
   provider: string;
   channel: string;
   externalId: string | null;
+  /** channel_connection.webhookSecret — the per-business verify token. */
+  webhookSecret: string | null;
+  label: string | null;
 };
 
 export function IntegrationsList({
@@ -62,6 +67,16 @@ export function IntegrationsList({
       (c) => c.provider === it.provider && c.channel === it.channel,
     );
 
+  /**
+   * Pick the most-recent connection matching this integration. We display
+   * its per-business webhook URL + verify token in the Meta callout once
+   * a connection exists.
+   */
+  const findConnection = (it: Integration): ConnectedSummary | undefined =>
+    connected.find(
+      (c) => c.provider === it.provider && c.channel === it.channel,
+    );
+
   return (
     <div className="space-y-8">
       {(["whatsapp", "instagram", "messenger"] as const).map((category) => {
@@ -86,6 +101,7 @@ export function IntegrationsList({
                   }
                   metaVerifyToken={metaVerifyToken}
                   metaAppSecretSet={metaAppSecretSet}
+                  existingConnection={findConnection(it)}
                 />
               ))}
             </div>
@@ -105,6 +121,7 @@ function IntegrationCard({
   onToggle,
   metaVerifyToken,
   metaAppSecretSet,
+  existingConnection,
 }: {
   integration: Integration;
   orgSlug: string;
@@ -114,6 +131,7 @@ function IntegrationCard({
   onToggle: () => void;
   metaVerifyToken?: string | null;
   metaAppSecretSet?: boolean;
+  existingConnection?: ConnectedSummary;
 }) {
   const webhookUrl = appOrigin
     ? `${appOrigin}${it.webhookPath}`
@@ -200,6 +218,8 @@ function IntegrationCard({
               webhookUrl={webhookUrl}
               metaVerifyToken={metaVerifyToken}
               metaAppSecretSet={metaAppSecretSet}
+              existingConnection={existingConnection}
+              appOrigin={appOrigin}
             />
           </motion.div>
         ) : null}
@@ -214,12 +234,16 @@ function IntegrationBody({
   webhookUrl,
   metaVerifyToken,
   metaAppSecretSet,
+  existingConnection,
+  appOrigin,
 }: {
   it: Integration;
   orgSlug: string;
   webhookUrl: string;
   metaVerifyToken?: string | null;
   metaAppSecretSet?: boolean;
+  existingConnection?: ConnectedSummary;
+  appOrigin: string;
 }) {
   const [tab, setTab] = useState<"setup" | "credentials">("setup");
   return (
@@ -257,13 +281,16 @@ function IntegrationBody({
         ) : null}
       </div>
 
-      {/* Meta-specific helper: surface the platform's verify token + app
-          secret status so admins can paste them straight into Meta's app
-          Webhooks panel without hunting through env vars. */}
+      {/* Meta-specific helper. AFTER you save credentials, this shows the
+          PER-BUSINESS webhook URL + verify token to paste into THAT
+          business's Meta App webhook config. Each onboarded business
+          brings their own Meta app, so nothing here is platform-wide. */}
       {it.provider === "meta" && (
         <MetaVerifyCallout
-          verifyToken={metaVerifyToken ?? null}
-          appSecretSet={Boolean(metaAppSecretSet)}
+          appOrigin={appOrigin}
+          existingConnection={existingConnection}
+          platformVerifyToken={metaVerifyToken ?? null}
+          platformAppSecretSet={Boolean(metaAppSecretSet)}
         />
       )}
 
@@ -340,127 +367,142 @@ function IntegrationBody({
 }
 
 /**
- * Renders the platform's `META_VERIFY_TOKEN` (with a copy button + show /
- * hide toggle) and the status of `META_APP_SECRET`. This is exactly the
- * pair Meta's webhook config asks for: callback URL + verify token, plus
- * the app secret used for signature verification on inbound POSTs.
+ * Multi-tenant Meta callout.
  *
- * If META_VERIFY_TOKEN isn't set yet, we generate a one-time random
- * suggestion the operator can copy → paste into Amplify env → paste into
- * Meta. We also show the same value in Meta's panel.
+ * Each onboarded business has THEIR OWN Meta app. So we generate a unique
+ * per-business webhook URL + verify token at connect time and show them
+ * here for the user to paste into their app's Webhooks config.
+ *
+ * Two states:
+ *   1. Not connected yet — show "Save credentials first, then this card
+ *      will show your unique URL and verify token."
+ *   2. Connected — show the per-business URL + the auto-generated
+ *      `webhookSecret` (verify token) with copy buttons.
+ *
+ * The platform-wide META_VERIFY_TOKEN / META_APP_SECRET are now optional
+ * fallbacks (only used when a connection has no app secret stored —
+ * e.g. for legacy single-tenant testing or if you're hosting your own
+ * Meta app for everyone). We show their status as a footnote.
  */
 function MetaVerifyCallout({
-  verifyToken,
-  appSecretSet,
+  appOrigin,
+  existingConnection,
+  platformVerifyToken,
+  platformAppSecretSet,
 }: {
-  verifyToken: string | null;
-  appSecretSet: boolean;
+  appOrigin: string;
+  existingConnection?: ConnectedSummary;
+  platformVerifyToken: string | null;
+  platformAppSecretSet: boolean;
 }) {
   const [showToken, setShowToken] = useState(false);
-  const suggested = useSuggestedToken();
-  const present = Boolean(verifyToken && verifyToken.trim());
+
+  const isConnected = Boolean(
+    existingConnection?.id && existingConnection?.webhookSecret,
+  );
+  const perBizUrl = existingConnection
+    ? `${appOrigin || ""}/api/webhooks/meta/${existingConnection.id}`
+    : "";
+  const perBizToken = existingConnection?.webhookSecret ?? "";
 
   return (
     <div
       className={cn(
         "mb-4 rounded-xl border p-3",
-        present
+        isConnected
           ? "border-[rgb(var(--accent)/0.35)] bg-[rgb(var(--accent)/0.06)]"
-          : "border-amber-500/30 bg-amber-500/10",
+          : "border-[rgb(var(--border))] bg-[rgb(var(--surface-2))]",
       )}
     >
       <div className="mb-2 flex items-center gap-2">
         <span
           className={cn(
-            "flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold",
-            present ? "bg-[rgb(var(--accent))] text-white" : "bg-amber-500 text-white",
+            "flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white",
+            isConnected ? "bg-[rgb(var(--accent))]" : "bg-[rgb(var(--fg-subtle))]",
           )}
         >
-          {present ? "✓" : "!"}
+          {isConnected ? "✓" : "→"}
         </span>
         <p className="text-[11px] font-semibold uppercase tracking-wider text-[rgb(var(--fg))]">
-          Meta App → Webhooks → Verify token
+          {isConnected
+            ? "Per-business Meta webhook (paste these into your Meta App)"
+            : "After you save credentials, your unique webhook URL + verify token will appear here"}
         </p>
       </div>
 
-      {present ? (
+      {isConnected ? (
         <>
           <p className="mb-2 text-[11px] text-[rgb(var(--fg-muted))]">
-            Paste this value into the <strong>Verify token</strong> field on
-            Meta&apos;s Webhooks panel (alongside the Callback URL above).
+            Each business uses its own Meta app. These two values are unique
+            to <strong>this connection</strong> — paste them into Meta →
+            Instagram → <strong>API setup with Instagram Login</strong> →{" "}
+            <strong>Configure webhooks</strong> (same panel for test and production).
           </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-2.5 py-1.5 font-mono text-[11px] text-[rgb(var(--fg))]">
-              {showToken ? verifyToken : "•".repeat(Math.min(32, verifyToken!.length))}
-            </code>
-            <button
-              type="button"
-              onClick={() => setShowToken((v) => !v)}
-              className="rounded-md border border-[rgb(var(--border))] px-2 py-1 text-[10px] text-[rgb(var(--fg-muted))] hover:bg-[rgb(var(--surface))]"
-            >
-              {showToken ? "Hide" : "Show"}
-            </button>
-            <CopyButton value={verifyToken!} />
+
+          <div className="space-y-2">
+            <div>
+              <p className="mb-0.5 text-[10px] uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
+                Callback URL — same URL for testing and production
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-2.5 py-1.5 font-mono text-[11px] text-[rgb(var(--fg))]">
+                  {perBizUrl}
+                </code>
+                <CopyButton value={perBizUrl} />
+              </div>
+            </div>
+            <div>
+              <p className="mb-0.5 text-[10px] uppercase tracking-wider text-[rgb(var(--fg-subtle))]">
+                Verify token — paste in the same Configure webhooks panel
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-2.5 py-1.5 font-mono text-[11px] text-[rgb(var(--fg))]">
+                  {showToken ? perBizToken : "•".repeat(Math.min(48, perBizToken.length))}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => setShowToken((v) => !v)}
+                  className="rounded-md border border-[rgb(var(--border))] px-2 py-1 text-[10px] text-[rgb(var(--fg-muted))] hover:bg-[rgb(var(--surface))]"
+                >
+                  {showToken ? "Hide" : "Show"}
+                </button>
+                <CopyButton value={perBizToken} />
+              </div>
+            </div>
           </div>
+
+          <p className="mt-2 text-[11px] text-[rgb(var(--fg-subtle))]">
+            Inbound POSTs use <strong>X-Hub-Signature-256</strong>, verified with
+            the <strong>App Secret</strong> from your Credentials tab (not the
+            verify token). One webhook URL for Development and Live — Meta does
+            not use a separate “production webhook” for the Instagram Graph path.
+          </p>
         </>
       ) : (
         <>
-          <p className="mb-2 text-[11px] text-[rgb(var(--fg-muted))]">
-            <strong>META_VERIFY_TOKEN</strong> isn&apos;t set on this deployment yet. Pick any random
-            string, set it in Amplify env, and paste the same value into Meta&apos;s
-            <strong> Verify token </strong>field. Suggested random value:
+          <p className="text-[11px] text-[rgb(var(--fg-muted))]">
+            Step 1 — paste your <strong>long-lived Page access token</strong> and{" "}
+            <strong>App Secret</strong> (optional: Instagram Business Account ID
+            if auto-detect fails). Click <em>Save &amp; connect</em>. Step 2 —
+            copy the <strong>Callback URL</strong> and <strong>Verify token</strong>{" "}
+            shown here into Meta&apos;s Configure webhooks panel, then Verify and save.
           </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-lg border border-amber-500/30 bg-[rgb(var(--surface))] px-2.5 py-1.5 font-mono text-[11px] text-[rgb(var(--fg))]">
-              {suggested}
-            </code>
-            <CopyButton value={suggested} />
-          </div>
-          <p className="mt-2 text-[11px] text-[rgb(var(--fg-subtle))]">
-            Then in Amplify console → Hosting → Environment variables, add{" "}
-            <code className="rounded bg-[rgb(var(--surface))] px-1 font-mono">
-              META_VERIFY_TOKEN
-            </code>{" "}
-            with this value, redeploy, refresh this page.
-          </p>
+          {(platformVerifyToken || platformAppSecretSet) && (
+            <p className="mt-2 text-[10.5px] text-[rgb(var(--fg-subtle))]">
+              <strong>Note:</strong> platform-wide{" "}
+              <code className="font-mono">META_VERIFY_TOKEN</code>
+              {platformVerifyToken ? " is set" : " not set"} +{" "}
+              <code className="font-mono">META_APP_SECRET</code>
+              {platformAppSecretSet ? " is set" : " not set"}. These are
+              only used as fallbacks for the legacy{" "}
+              <code className="font-mono">/api/webhooks/meta</code> URL —
+              new businesses use the per-connection URL above.
+            </p>
+          )}
         </>
       )}
-
-      <div className="mt-3 flex items-center gap-2 border-t border-[rgb(var(--border))] pt-3 text-[11px]">
-        <span
-          className={cn(
-            "flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold",
-            appSecretSet
-              ? "bg-emerald-500 text-white"
-              : "bg-amber-500 text-white",
-          )}
-        >
-          {appSecretSet ? "✓" : "!"}
-        </span>
-        <span className="text-[rgb(var(--fg-muted))]">
-          <strong>META_APP_SECRET</strong> {appSecretSet ? "is set " : "is NOT set "} —
-          {appSecretSet
-            ? " Inbound POSTs from Meta will be signature-verified."
-            : " Inbound POSTs aren't currently signature-verified. Add it to Amplify env (Meta → App settings → Basic → App secret) for production."}
-        </span>
-      </div>
     </div>
   );
-}
-
-/**
- * One-time random suggestion shown when META_VERIFY_TOKEN isn't set yet.
- * Generated client-side; not stored. Stable per mount (`useMemo`).
- */
-function useSuggestedToken(): string {
-  return useMemo(() => {
-    if (typeof window === "undefined") return "";
-    const arr = new Uint8Array(24);
-    window.crypto.getRandomValues(arr);
-    return Array.from(arr)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-  }, []);
 }
 
 function TabButton({

@@ -4,6 +4,28 @@
  * are heavy and we don't want them in the web runtime bundle.
  */
 
+import { spawn } from "node:child_process";
+
+function tryPdftotext(buffer: Buffer): Promise<string> {
+  return new Promise((resolve) => {
+    const child = spawn("pdftotext", ["-layout", "-", "-"], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let out = "";
+    child.stdout?.on("data", (c: Buffer) => {
+      out += c.toString("utf8");
+    });
+    child.stderr?.on("data", () => {});
+    child.on("error", () => resolve(""));
+    child.on("close", (code) => {
+      if (code !== 0 && !out.trim()) resolve("");
+      else resolve(out);
+    });
+    child.stdin?.write(buffer);
+    child.stdin?.end();
+  });
+}
+
 export async function parseFileToText(opts: {
   buffer: Buffer;
   mimeType: string;
@@ -15,7 +37,12 @@ export async function parseFileToText(opts: {
   if (mt === "application/pdf" || name.endsWith(".pdf")) {
     const { default: pdfParse } = await import("pdf-parse");
     const data = await pdfParse(opts.buffer);
-    return data.text ?? "";
+    let text = (data.text ?? "").trim();
+    if (!text) {
+      const second = (await tryPdftotext(opts.buffer)).trim();
+      if (second) text = second;
+    }
+    return text;
   }
 
   if (
