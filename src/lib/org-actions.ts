@@ -21,8 +21,14 @@ import {
 import { invalidateBotConfigCache } from "@/lib/cache/bot-config";
 import { encryptJSON } from "@/lib/encryption";
 import { getOrgAccess } from "@/lib/org-access";
+import { formatBusinessChannelLabel } from "@/lib/channels/display-label";
+import {
+  fetchInstagramBusinessAccountProfile,
+  fetchMessengerPageName,
+  resolveInstagramBusinessUserId,
+  resolveInstagramPageAccessToken,
+} from "@/lib/providers/meta-resolve";
 import { exchangeForLongLivedUserToken } from "@/lib/providers/meta-token";
-import { resolveInstagramBusinessUserId } from "@/lib/providers/meta-resolve";
 import {
   enqueue,
   QUEUES,
@@ -313,6 +319,11 @@ export async function connectChannelAction(
     const id = randomUUID();
     const mergedConfig: Record<string, unknown> = { ...p.data.config };
 
+    const secretsForStorage: Record<string, string> = {};
+    for (const [k, v] of Object.entries(p.data.secrets)) {
+      secretsForStorage[k] = typeof v === "string" ? v.trim() : String(v ?? "");
+    }
+
     if (p.data.provider === "meta" && p.data.channel === "instagram") {
       const appId = String(mergedConfig.instagramAppId ?? "").trim();
       if (!appId) {
@@ -340,7 +351,7 @@ export async function connectChannelAction(
       p.data.channel === "instagram" &&
       !(String(mergedConfig.igUserId ?? "").trim())
     ) {
-      const token = String(p.data.secrets.accessToken ?? "").trim();
+      const token = String(secretsForStorage.accessToken ?? "").trim();
       if (!token) {
         return { error: "Instagram requires an access token to auto-detect the Business Account ID." };
       }
@@ -354,25 +365,66 @@ export async function connectChannelAction(
       mergedConfig.igUserId = resolved;
     }
 
-    const secretsForStorage: Record<string, string> = { ...p.data.secrets };
-    if (p.data.provider === "meta") {
-      const appSecret = String(secretsForStorage.appSecret ?? "").trim();
-      const token = String(secretsForStorage.accessToken ?? "").trim();
-      const appId =
-        p.data.channel === "instagram"
-          ? String(mergedConfig.instagramAppId ?? "").trim()
-          : String(mergedConfig.facebookAppId ?? "").trim();
+    if (p.data.provider === "meta" && p.data.channel === "instagram") {
+      const appSecret = secretsForStorage.appSecret ?? "";
+      let token = secretsForStorage.accessToken ?? "";
+      const appId = String(mergedConfig.instagramAppId ?? "").trim();
+      const igBiz = String(mergedConfig.igUserId ?? "").trim();
       if (appId && appSecret && token) {
         const exchanged = await exchangeForLongLivedUserToken({
           appId,
           appSecret,
           shortLivedToken: token,
         });
-        if (exchanged) {
-          secretsForStorage.accessToken = exchanged.accessToken;
+        if (exchanged?.accessToken && exchanged.accessToken.length > 20) {
+          token = exchanged.accessToken.trim();
+          secretsForStorage.accessToken = token;
         }
       }
+      if (igBiz && token) {
+        const pageTok = await resolveInstagramPageAccessToken(token, igBiz);
+        if (pageTok) {
+          secretsForStorage.accessToken = pageTok.trim();
+          token = secretsForStorage.accessToken;
+        }
+        const prof = await fetchInstagramBusinessAccountProfile(token, igBiz);
+        if (prof?.username) mergedConfig.instagramUsername = prof.username;
+        if (prof?.name) mergedConfig.instagramBusinessName = prof.name;
+      }
+    } else if (p.data.provider === "meta" && p.data.channel === "messenger") {
+      const appSecret = secretsForStorage.appSecret ?? "";
+      let token = secretsForStorage.accessToken ?? "";
+      const appId = String(mergedConfig.facebookAppId ?? "").trim();
+      const pageId = String(mergedConfig.pageId ?? "").trim();
+      if (appId && appSecret && token) {
+        const exchanged = await exchangeForLongLivedUserToken({
+          appId,
+          appSecret,
+          shortLivedToken: token,
+        });
+        if (exchanged?.accessToken && exchanged.accessToken.length > 20) {
+          token = exchanged.accessToken.trim();
+          secretsForStorage.accessToken = token;
+        }
+      }
+      if (pageId && token) {
+        const pageName = await fetchMessengerPageName(token, pageId);
+        if (pageName) mergedConfig.pageName = pageName;
+      }
     }
+
+    const autoLabel =
+      p.data.provider === "meta" || p.data.provider === "ycloud" || p.data.provider === "syrow"
+        ? formatBusinessChannelLabel({
+            provider: p.data.provider,
+            channel: p.data.channel,
+            config: mergedConfig as Record<string, unknown>,
+            externalId:
+              (typeof mergedConfig.igUserId === "string" ? mergedConfig.igUserId : null) ??
+              (typeof mergedConfig.pageId === "string" ? mergedConfig.pageId : null) ??
+              null,
+          })
+        : null;
 
     let secretsCiphertext: string;
     try {
@@ -390,7 +442,7 @@ export async function connectChannelAction(
       organizationId: org.id,
       channel: p.data.channel,
       provider: p.data.provider,
-      label: p.data.label ?? null,
+      label: (p.data.label ?? "").trim() || autoLabel || null,
       externalId:
         p.data.externalId ??
         (typeof mergedConfig.igUserId === "string" ? mergedConfig.igUserId : null) ??

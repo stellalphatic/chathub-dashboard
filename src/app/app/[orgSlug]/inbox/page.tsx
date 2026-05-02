@@ -9,7 +9,14 @@ import {
 } from "@/components/inbox/inbox-client";
 import { ThreadMessages } from "@/components/inbox/thread-messages";
 import { db } from "@/db";
-import { conversation, customer, message, template } from "@/db/schema";
+import {
+  channelConnection,
+  conversation,
+  customer,
+  message,
+  template,
+} from "@/db/schema";
+import { formatBusinessChannelLabel } from "@/lib/channels/display-label";
 import { assertOrgMember } from "@/lib/org-access";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +32,24 @@ export default async function InboxPage({
 
   const { org } = await assertOrgMember(orgSlug);
 
+  const channelRows = await db
+    .select()
+    .from(channelConnection)
+    .where(eq(channelConnection.organizationId, org.id));
+  const ccById = new Map(channelRows.map((r) => [r.id, r]));
+
+  function businessLabelFor(connId: string | null): string | null {
+    if (!connId) return null;
+    const r = ccById.get(connId);
+    if (!r) return null;
+    return formatBusinessChannelLabel({
+      provider: r.provider,
+      channel: r.channel,
+      config: (r.config ?? {}) as Record<string, unknown>,
+      externalId: r.externalId,
+    });
+  }
+
   const convs = await db
     .select({
       id: conversation.id,
@@ -38,6 +63,8 @@ export default async function InboxPage({
       customerId: conversation.customerId,
       phoneE164: customer.phoneE164,
       displayName: customer.displayName,
+      profile: customer.profile,
+      channelConnectionId: conversation.channelConnectionId,
     })
     .from(conversation)
     .innerJoin(customer, eq(conversation.customerId, customer.id))
@@ -78,18 +105,37 @@ export default async function InboxPage({
     mediaMimeType: m.mediaMimeType,
   }));
 
-  const sidebarConvs: ConversationListItem[] = convs.map((c) => ({
-    id: c.id,
-    channel: c.channel,
-    mode: c.mode,
-    status: c.status,
-    unreadCount: c.unreadCount ?? 0,
-    lastInboundAt: c.lastInboundAt,
-    lastMessageAt: c.lastMessageAt,
-    preview: c.preview,
-    displayName: c.displayName,
-    phoneE164: c.phoneE164,
-  }));
+  const sidebarConvs: ConversationListItem[] = convs.map((c) => {
+    const prof = (c.profile ?? {}) as Record<string, unknown>;
+    const avatarUrl =
+      c.channel === "instagram" && typeof prof.instagram_profile_pic === "string"
+        ? prof.instagram_profile_pic
+        : null;
+    return {
+      id: c.id,
+      channel: c.channel,
+      mode: c.mode,
+      status: c.status,
+      unreadCount: c.unreadCount ?? 0,
+      lastInboundAt: c.lastInboundAt,
+      lastMessageAt: c.lastMessageAt,
+      preview: c.preview,
+      displayName: c.displayName,
+      phoneE164: c.phoneE164,
+      avatarUrl,
+      businessChannelLabel: businessLabelFor(c.channelConnectionId ?? null),
+    };
+  });
+
+  const activeProf = active
+    ? ((active.profile ?? {}) as Record<string, unknown>)
+    : null;
+  const activeAvatarUrl =
+    active?.channel === "instagram" &&
+    activeProf &&
+    typeof activeProf.instagram_profile_pic === "string"
+      ? (activeProf.instagram_profile_pic as string)
+      : null;
 
   return (
     <div className="flex h-[calc(100dvh-10rem)] min-h-[36rem] flex-col gap-3">
@@ -138,6 +184,10 @@ export default async function InboxPage({
                 lastInboundAt={active.lastInboundAt}
                 displayName={active.displayName}
                 phoneE164={active.phoneE164}
+                avatarUrl={activeAvatarUrl}
+                businessChannelLabel={businessLabelFor(
+                  active.channelConnectionId ?? null,
+                )}
               />
               <ThreadMessages
                 threadKey={selectedId ?? "none"}

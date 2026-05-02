@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { channelConnection } from "@/db/schema";
 import { decryptJSON } from "@/lib/encryption";
+import { resolveInstagramPageAccessToken } from "./meta-resolve";
 import {
   createInstagramSender,
   createMessengerSender,
@@ -48,7 +49,11 @@ export async function loadChannelConnection(
   if (!row.secretsCiphertext) {
     throw new Error("channel connection missing secrets");
   }
-  const secrets = decryptJSON<Record<string, string>>(row.secretsCiphertext);
+  const secretsRaw = decryptJSON<Record<string, string>>(row.secretsCiphertext);
+  const secrets: Record<string, string> = {};
+  for (const [k, v] of Object.entries(secretsRaw)) {
+    secrets[k] = typeof v === "string" ? v.trim() : String(v ?? "");
+  }
   const config = (row.config ?? {}) as Record<string, unknown>;
 
   let sender: ChannelSender;
@@ -64,9 +69,16 @@ export async function loadChannelConnection(
       break;
     case "meta":
       if (row.channel === "instagram") {
+        const igCfg = config as unknown as MetaIgConfig;
+        const igId = String(igCfg.igUserId ?? "").trim();
+        let accessToken = String((secrets as MetaSecrets).accessToken ?? "").trim();
+        if (igId && accessToken) {
+          const pageTok = await resolveInstagramPageAccessToken(accessToken, igId);
+          if (pageTok) accessToken = pageTok;
+        }
         sender = createInstagramSender(
-          secrets as MetaSecrets,
-          config as unknown as MetaIgConfig,
+          { ...(secrets as MetaSecrets), accessToken },
+          igCfg,
         );
       } else {
         sender = createMessengerSender(

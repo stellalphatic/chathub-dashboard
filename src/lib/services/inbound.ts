@@ -8,6 +8,11 @@ import {
   message,
   webhookEvent,
 } from "@/db/schema";
+import { decryptJSON } from "@/lib/encryption";
+import {
+  fetchInstagramScopedParticipant,
+  resolveInstagramPageAccessToken,
+} from "@/lib/providers/meta-resolve";
 import type { NormalizedInboundMessage } from "@/lib/providers/types";
 
 export type IngestedInbound = {
@@ -100,6 +105,31 @@ export async function ingestInboundMessage(opts: {
 
   const organizationId = conn.organizationId;
 
+  let inboundDisplayName = m.displayName ?? undefined;
+  let inboundProfilePicUrl: string | null = null;
+  if (
+    m.provider === "meta" &&
+    m.channel === "instagram" &&
+    m.fromExternalId &&
+    conn.secretsCiphertext
+  ) {
+    try {
+      const sec = decryptJSON<Record<string, string>>(conn.secretsCiphertext);
+      const cfg = (conn.config ?? {}) as Record<string, unknown>;
+      const igBiz = String(cfg.igUserId ?? conn.externalId ?? "").trim();
+      if (igBiz) {
+        let tok = String(sec.accessToken ?? "").trim();
+        const pageTok = await resolveInstagramPageAccessToken(tok, igBiz);
+        if (pageTok) tok = pageTok;
+        const part = await fetchInstagramScopedParticipant(tok, String(m.fromExternalId));
+        if (part?.label) inboundDisplayName = inboundDisplayName ?? part.label;
+        if (part?.profilePicUrl) inboundProfilePicUrl = part.profilePicUrl;
+      }
+    } catch (e) {
+      console.warn("[inbound] instagram profile enrich failed:", e);
+    }
+  }
+
   // 2. Idempotency — have we seen this externalMessageId?
   try {
     await db.insert(webhookEvent).values({
@@ -151,7 +181,7 @@ export async function ingestInboundMessage(opts: {
         .set({
           lastContactedAt: now,
           updatedAt: now,
-          ...(m.displayName ? { displayName: m.displayName } : {}),
+          ...(inboundDisplayName ? { displayName: inboundDisplayName } : {}),
         })
         .where(eq(customer.id, existing.id));
     } else {
@@ -160,7 +190,7 @@ export async function ingestInboundMessage(opts: {
         id: customerId,
         organizationId,
         phoneE164,
-        displayName: m.displayName ?? null,
+        displayName: inboundDisplayName ?? null,
         lastContactedAt: now,
       });
     }
@@ -180,12 +210,25 @@ export async function ingestInboundMessage(opts: {
       .limit(1);
     if (existing) {
       customerId = existing.id;
+      let profilePatch: Record<string, unknown> | undefined;
+      if (m.channel === "instagram" && inboundProfilePicUrl) {
+        const [cur] = await db
+          .select({ profile: customer.profile })
+          .from(customer)
+          .where(eq(customer.id, existing.id))
+          .limit(1);
+        const prev = (cur?.profile ?? {}) as Record<string, unknown>;
+        if (prev.instagram_profile_pic !== inboundProfilePicUrl) {
+          profilePatch = { ...prev, instagram_profile_pic: inboundProfilePicUrl };
+        }
+      }
       await db
         .update(customer)
         .set({
           lastContactedAt: now,
           updatedAt: now,
-          ...(m.displayName ? { displayName: m.displayName } : {}),
+          ...(inboundDisplayName ? { displayName: inboundDisplayName } : {}),
+          ...(profilePatch ? { profile: profilePatch } : {}),
         })
         .where(eq(customer.id, existing.id));
     } else {
@@ -194,9 +237,14 @@ export async function ingestInboundMessage(opts: {
         id: customerId,
         organizationId,
         phoneE164: phoneSurrogate,
-        displayName: m.displayName ?? null,
+        displayName: inboundDisplayName ?? null,
         lastContactedAt: now,
-        profile: { [`${m.channel}_id`]: externalId },
+        profile: {
+          [`${m.channel}_id`]: externalId,
+          ...(m.channel === "instagram" && inboundProfilePicUrl
+            ? { instagram_profile_pic: inboundProfilePicUrl }
+            : {}),
+        },
       });
     }
   } else {

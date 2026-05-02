@@ -44,6 +44,8 @@ export function ConversationHeader({
   lastInboundAt,
   displayName,
   phoneE164,
+  avatarUrl,
+  businessChannelLabel,
 }: {
   orgSlug: string;
   conversationId: string;
@@ -53,6 +55,10 @@ export function ConversationHeader({
   lastInboundAt: Date | null;
   displayName: string | null;
   phoneE164: string | null;
+  /** Customer profile image (e.g. Instagram `profile_pic` from Graph). */
+  avatarUrl?: string | null;
+  /** Our connected WhatsApp / Instagram / Messenger identity for this thread. */
+  businessChannelLabel?: string | null;
 }) {
   const [pending, start] = useTransition();
   const isBot = mode === "bot";
@@ -104,6 +110,16 @@ export function ConversationHeader({
         </Link>
         <div className="min-w-0">
         <div className="flex items-center gap-2">
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt={displayName ? `${displayName} profile` : "Customer profile"}
+              width={36}
+              height={36}
+              className="h-9 w-9 shrink-0 rounded-full border border-[rgb(var(--border))] object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : null}
           <p className="truncate font-semibold text-[rgb(var(--fg))]">
             {displayName ||
               (phoneE164?.startsWith("ext:") ? "Customer" : phoneE164) ||
@@ -118,6 +134,11 @@ export function ConversationHeader({
         <p className="mt-0.5 truncate font-mono text-[11px] text-[rgb(var(--fg-subtle))]">
           {subtitle}
         </p>
+        {businessChannelLabel ? (
+          <p className="mt-1 truncate text-[11px] font-medium text-[rgb(var(--accent))]">
+            {businessChannelLabel}
+          </p>
+        ) : null}
         <p className="mt-1 text-[11px] text-[rgb(var(--fg-muted))]">
           {windowLabel(lastInboundAt)}
         </p>

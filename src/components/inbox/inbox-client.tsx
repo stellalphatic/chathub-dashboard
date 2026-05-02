@@ -30,6 +30,10 @@ export type ConversationListItem = {
   preview: string | null;
   displayName: string | null;
   phoneE164: string | null;
+  /** Customer avatar (Instagram profile pic URL, etc.). */
+  avatarUrl?: string | null;
+  /** Connected business line (our WhatsApp / IG / Page). */
+  businessChannelLabel?: string | null;
 };
 
 const CHANNEL_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -85,6 +89,8 @@ export function InboxSidebar({
           c.displayName ?? "",
           c.phoneE164 ?? "",
           c.preview ?? "",
+          c.businessChannelLabel ?? "",
+          c.avatarUrl ?? "",
         ]
           .join(" ")
           .toLowerCase();
@@ -254,14 +260,29 @@ export function InboxSidebar({
                   )}
                 >
                   <div className="flex items-start gap-2.5">
-                    <span
-                      className={cn(
-                        "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--surface-2))]",
-                        colorCls,
-                      )}
-                    >
-                      <Icon className="h-4 w-4" />
-                    </span>
+                    {cv.avatarUrl ? (
+                      <img
+                        src={cv.avatarUrl}
+                        alt={
+                          cv.displayName
+                            ? `${cv.displayName} profile`
+                            : "Customer profile"
+                        }
+                        width={36}
+                        height={36}
+                        className="mt-0.5 h-9 w-9 shrink-0 rounded-full border border-[rgb(var(--border))] object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <span
+                        className={cn(
+                          "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--surface-2))]",
+                          colorCls,
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </span>
+                    )}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <p className="truncate text-sm font-medium text-[rgb(var(--fg))]">
@@ -278,6 +299,11 @@ export function InboxSidebar({
                       <p className="truncate text-xs text-[rgb(var(--fg-muted))]">
                         {cv.preview ?? "No messages yet"}
                       </p>
+                      {cv.businessChannelLabel ? (
+                        <p className="mt-0.5 truncate text-[10px] font-medium text-[rgb(var(--accent))]">
+                          {cv.businessChannelLabel}
+                        </p>
+                      ) : null}
                       <div className="mt-1 flex flex-wrap items-center gap-1">
                         <Badge
                           variant={cv.mode === "bot" ? "success" : "warning"}

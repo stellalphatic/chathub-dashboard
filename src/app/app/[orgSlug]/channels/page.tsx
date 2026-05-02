@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { DeleteChannelButton } from "@/components/channels/delete-channel-button";
 import { IntegrationsList } from "@/components/channels/integrations-list";
+import { formatBusinessChannelLabel } from "@/lib/channels/display-label";
 
 export default async function ChannelsPage({
   params,
@@ -67,9 +68,19 @@ export default async function ChannelsPage({
                       <p className="font-medium">
                         {r.label || `${r.provider} · ${r.channel}`}
                       </p>
-                      <p className="truncate font-mono text-[10px] text-[rgb(var(--fg-subtle))]">
-                        {r.provider} · {r.channel}
-                        {r.externalId ? ` · ${r.externalId}` : ""}
+                      <p className="truncate text-[10px] text-[rgb(var(--fg-subtle))]">
+                        <span className="font-mono">
+                          {r.provider} · {r.channel}
+                          {r.externalId ? ` · ${r.externalId}` : ""}
+                        </span>
+                      </p>
+                      <p className="truncate text-[11px] font-medium text-[rgb(var(--fg-muted))]">
+                        {formatBusinessChannelLabel({
+                          provider: r.provider,
+                          channel: r.channel,
+                          config: (r.config ?? {}) as Record<string, unknown>,
+                          externalId: r.externalId,
+                        })}
                       </p>
                     </div>
                   </div>
