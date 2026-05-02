@@ -2,10 +2,14 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { channelConnection } from "@/db/schema";
 import { decryptJSON } from "@/lib/encryption";
-import { resolveInstagramPageAccessToken } from "./meta-resolve";
+import {
+  probeInstagramLoginToken,
+  resolveInstagramPageAccessToken,
+} from "./meta-resolve";
 import {
   createInstagramSender,
   createMessengerSender,
+  type InstagramMessagingGraph,
   type MetaFbConfig,
   type MetaIgConfig,
   type MetaSecrets,
@@ -69,16 +73,35 @@ export async function loadChannelConnection(
       break;
     case "meta":
       if (row.channel === "instagram") {
-        const igCfg = config as unknown as MetaIgConfig;
+        const igCfg = config as unknown as MetaIgConfig & Record<string, unknown>;
         const igId = String(igCfg.igUserId ?? "").trim();
-        let accessToken = String((secrets as MetaSecrets).accessToken ?? "").trim();
-        if (igId && accessToken) {
-          const pageTok = await resolveInstagramPageAccessToken(accessToken, igId);
-          if (pageTok) accessToken = pageTok;
+        const rawTok = String((secrets as MetaSecrets).accessToken ?? "").trim();
+        const explicit = igCfg.messagingGraph as InstagramMessagingGraph | undefined;
+        const pageTok =
+          igId && rawTok ? await resolveInstagramPageAccessToken(rawTok, igId) : null;
+
+        let messagingGraph: InstagramMessagingGraph;
+        let accessToken: string;
+        if (explicit === "instagram") {
+          messagingGraph = "instagram";
+          accessToken = rawTok;
+        } else if (explicit === "facebook") {
+          messagingGraph = "facebook";
+          accessToken = (pageTok ?? rawTok).trim();
+        } else if (pageTok) {
+          messagingGraph = "facebook";
+          accessToken = pageTok.trim();
+        } else if (rawTok && (await probeInstagramLoginToken(rawTok))) {
+          messagingGraph = "instagram";
+          accessToken = rawTok;
+        } else {
+          messagingGraph = "facebook";
+          accessToken = rawTok;
         }
+
         sender = createInstagramSender(
           { ...(secrets as MetaSecrets), accessToken },
-          igCfg,
+          { ...igCfg, igUserId: igId, messagingGraph },
         );
       } else {
         sender = createMessengerSender(

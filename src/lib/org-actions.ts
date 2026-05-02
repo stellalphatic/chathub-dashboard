@@ -24,7 +24,9 @@ import { getOrgAccess } from "@/lib/org-access";
 import { formatBusinessChannelLabel } from "@/lib/channels/display-label";
 import {
   fetchInstagramBusinessAccountProfile,
+  fetchInstagramBusinessMeInstagramGraph,
   fetchMessengerPageName,
+  probeInstagramLoginToken,
   resolveInstagramBusinessUserId,
   resolveInstagramPageAccessToken,
 } from "@/lib/providers/meta-resolve";
@@ -386,10 +388,23 @@ export async function connectChannelAction(
         if (pageTok) {
           secretsForStorage.accessToken = pageTok.trim();
           token = secretsForStorage.accessToken;
+          mergedConfig.messagingGraph = "facebook";
+        } else if (await probeInstagramLoginToken(secretsForStorage.accessToken)) {
+          mergedConfig.messagingGraph = "instagram";
+        } else {
+          mergedConfig.messagingGraph = "facebook";
         }
-        const prof = await fetchInstagramBusinessAccountProfile(token, igBiz);
-        if (prof?.username) mergedConfig.instagramUsername = prof.username;
-        if (prof?.name) mergedConfig.instagramBusinessName = prof.name;
+        if (mergedConfig.messagingGraph === "facebook") {
+          const prof = await fetchInstagramBusinessAccountProfile(token, igBiz);
+          if (prof?.username) mergedConfig.instagramUsername = prof.username;
+          if (prof?.name) mergedConfig.instagramBusinessName = prof.name;
+        } else {
+          const self = await fetchInstagramBusinessMeInstagramGraph(
+            secretsForStorage.accessToken,
+          );
+          if (self?.username) mergedConfig.instagramUsername = self.username;
+          if (self?.name) mergedConfig.instagramBusinessName = self.name;
+        }
       }
     } else if (p.data.provider === "meta" && p.data.channel === "messenger") {
       const appSecret = secretsForStorage.appSecret ?? "";

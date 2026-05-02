@@ -4,11 +4,15 @@
  *
  * Instagram **send** API (`POST /{ig-user-id}/messages`) requires a **Page**
  * access token for the Facebook Page linked to that IG business account.
- * User tokens often produce OAuth 190 "Cannot parse access token" or
- * permission errors — `resolveInstagramPageAccessToken` fixes that.
+ * **Two Meta stacks:**
+ * - **Facebook Graph** (`graph.facebook.com`) + **Page** token → Messenger Platform IG.
+ * - **Instagram Graph** (`graph.instagram.com`) + **Instagram User** token →
+ *   [Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/messaging-api/).
+ *   Using the wrong host/token pair yields OAuth **190 Cannot parse access token**.
  */
 
 const GRAPH = "https://graph.facebook.com/v21.0";
+const IG_GRAPH = "https://graph.instagram.com/v21.0";
 
 async function graphGet(
   path: string,
@@ -105,7 +109,30 @@ export type InstagramScopedParticipant = {
   profilePicUrl: string | null;
 };
 
-/** Customer in an IG DM thread (IG-scoped user id from webhooks). */
+/** True if this token works on **graph.instagram.com** (Instagram Login user token). */
+export async function probeInstagramLoginToken(accessToken: string): Promise<boolean> {
+  const t = accessToken.trim();
+  if (!t) return false;
+  const url = `${IG_GRAPH}/me?fields=id&access_token=${encodeURIComponent(t)}`;
+  const res = await fetch(url);
+  return res.ok;
+}
+
+/** Business @username for dashboard (Instagram Login — `/me` on graph.instagram.com). */
+export async function fetchInstagramBusinessMeInstagramGraph(
+  instagramUserAccessToken: string,
+): Promise<{ username?: string; name?: string } | null> {
+  const t = instagramUserAccessToken.trim();
+  if (!t) return null;
+  const url = `${IG_GRAPH}/me?fields=id,username,name&access_token=${encodeURIComponent(t)}`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const j = (await res.json()) as { username?: string; name?: string };
+  if (!j.username && !j.name) return null;
+  return { username: j.username, name: j.name };
+}
+
+/** Customer in an IG DM thread — **Facebook Graph** + Page token (Messenger Platform). */
 export async function fetchInstagramScopedParticipant(
   pageAccessToken: string,
   instagramScopedUserId: string,
@@ -127,6 +154,33 @@ export async function fetchInstagramScopedParticipant(
   const profilePicUrl =
     typeof j.profile_pic === "string" && j.profile_pic.startsWith("http")
       ? j.profile_pic
+      : null;
+  if (!label && !profilePicUrl) return null;
+  return { label, profilePicUrl };
+}
+
+/** Customer profile — **Instagram Graph** + Instagram user token (Instagram Login). */
+export async function fetchInstagramLoginParticipant(
+  instagramUserAccessToken: string,
+  instagramScopedUserId: string,
+): Promise<InstagramScopedParticipant | null> {
+  const sid = instagramScopedUserId.trim();
+  const token = instagramUserAccessToken.trim();
+  if (!sid || !token) return null;
+  const url = `${IG_GRAPH}/${encodeURIComponent(sid)}?fields=username,name,profile_picture_url&access_token=${encodeURIComponent(token)}`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const j = (await res.json()) as {
+    username?: string;
+    name?: string;
+    profile_picture_url?: string;
+  };
+  let label: string | null = null;
+  if (j.username) label = `@${String(j.username).replace(/^@/, "")}`;
+  else if (j.name) label = j.name;
+  const profilePicUrl =
+    typeof j.profile_picture_url === "string" && j.profile_picture_url.startsWith("http")
+      ? j.profile_picture_url
       : null;
   if (!label && !profilePicUrl) return null;
   return { label, profilePicUrl };

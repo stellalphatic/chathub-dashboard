@@ -10,6 +10,7 @@ import {
 } from "@/db/schema";
 import { decryptJSON } from "@/lib/encryption";
 import {
+  fetchInstagramLoginParticipant,
   fetchInstagramScopedParticipant,
   resolveInstagramPageAccessToken,
 } from "@/lib/providers/meta-resolve";
@@ -118,10 +119,14 @@ export async function ingestInboundMessage(opts: {
       const cfg = (conn.config ?? {}) as Record<string, unknown>;
       const igBiz = String(cfg.igUserId ?? conn.externalId ?? "").trim();
       if (igBiz) {
-        let tok = String(sec.accessToken ?? "").trim();
-        const pageTok = await resolveInstagramPageAccessToken(tok, igBiz);
-        if (pageTok) tok = pageTok;
-        const part = await fetchInstagramScopedParticipant(tok, String(m.fromExternalId));
+        const rawTok = String(sec.accessToken ?? "").trim();
+        const pageTok = await resolveInstagramPageAccessToken(rawTok, igBiz);
+        let part = pageTok
+          ? await fetchInstagramScopedParticipant(pageTok, String(m.fromExternalId))
+          : null;
+        if (!part) {
+          part = await fetchInstagramLoginParticipant(rawTok, String(m.fromExternalId));
+        }
         if (part?.label) inboundDisplayName = inboundDisplayName ?? part.label;
         if (part?.profilePicUrl) inboundProfilePicUrl = part.profilePicUrl;
       }

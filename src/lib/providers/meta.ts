@@ -16,30 +16,40 @@ import type {
  *     legacy platform env `META_APP_SECRET` is only a fallback for `/api/webhooks/meta`.
  *
  * Config:
- *   - Instagram: { igUserId: string }  — Instagram Business Account ID used in `/{id}/messages`.
+ *   - Instagram: { igUserId, messagingGraph? }
+ *       - `messagingGraph: "facebook"` (default): Page access token on **graph.facebook.com**
+ *         (Messenger Platform + linked Page / IG).
+ *       - `messagingGraph: "instagram"`: **Instagram User** access token on **graph.instagram.com**
+ *         ([Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/messaging-api/)).
+ *         Using a Facebook-only token on `graph.facebook.com` often yields OAuth **190 Cannot parse access token**.
  *   - Messenger: { pageId: string }
  */
 
-const GRAPH = "https://graph.facebook.com/v21.0";
+const GRAPH_FB = "https://graph.facebook.com/v21.0";
+const GRAPH_IG = "https://graph.instagram.com/v21.0";
 
 export type MetaSecrets = {
   accessToken: string;
   appSecret?: string;
 };
 
+export type InstagramMessagingGraph = "facebook" | "instagram";
+
 export type MetaIgConfig = {
   igUserId: string;
+  /** Omit or `facebook` = Page token on graph.facebook.com; `instagram` = Instagram user token on graph.instagram.com */
+  messagingGraph?: InstagramMessagingGraph;
 };
 export type MetaFbConfig = {
   pageId: string;
 };
 
-async function postMeta(
+async function postMessengerFacebook(
   path: string,
   accessToken: string,
   body: unknown,
 ): Promise<Record<string, unknown>> {
-  const url = `${GRAPH}${path}?access_token=${encodeURIComponent(accessToken)}`;
+  const url = `${GRAPH_FB}${path}?access_token=${encodeURIComponent(accessToken)}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -51,22 +61,58 @@ async function postMeta(
   return res.json() as Promise<Record<string, unknown>>;
 }
 
+async function postInstagramDm(
+  igUserId: string,
+  accessToken: string,
+  body: unknown,
+  graph: InstagramMessagingGraph,
+): Promise<Record<string, unknown>> {
+  const path = `/${igUserId}/messages`;
+  if (graph === "instagram") {
+    const url = `${GRAPH_IG}${path}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      throw new Error(`meta instagram ${path} ${res.status}: ${await res.text()}`);
+    }
+    return res.json() as Promise<Record<string, unknown>>;
+  }
+  const url = `${GRAPH_FB}${path}?access_token=${encodeURIComponent(accessToken)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`meta facebook ${path} ${res.status}: ${await res.text()}`);
+  }
+  return res.json() as Promise<Record<string, unknown>>;
+}
+
 export function createInstagramSender(
   secrets: MetaSecrets,
   config: MetaIgConfig,
 ): ChannelSender {
+  const graph: InstagramMessagingGraph = config.messagingGraph ?? "facebook";
   return {
     async sendText(input: SendTextInput): Promise<SendResult> {
       if (!input.toExternalId) {
         throw new Error("Instagram sendText requires toExternalId (IG-scoped ID)");
       }
-      const json = await postMeta(
-        `/${config.igUserId}/messages`,
+      const json = await postInstagramDm(
+        config.igUserId,
         secrets.accessToken,
         {
           recipient: { id: input.toExternalId },
           message: { text: input.body },
         },
+        graph,
       );
       const id = String(json["message_id"] ?? json["id"] ?? "");
       return { providerMessageId: id || `ig-${Date.now()}`, raw: json };
@@ -83,7 +129,7 @@ export function createMessengerSender(
       if (!input.toExternalId) {
         throw new Error("Messenger sendText requires toExternalId (PSID)");
       }
-      const json = await postMeta(
+      const json = await postMessengerFacebook(
         `/${config.pageId}/messages`,
         secrets.accessToken,
         {
