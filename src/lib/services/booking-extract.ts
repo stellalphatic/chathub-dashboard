@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { conversation, customer, handoff } from "@/db/schema";
+import { customer, handoff } from "@/db/schema";
 import { llmComplete } from "@/lib/llm/router";
 import type { LlmMessage } from "@/lib/llm/types";
 

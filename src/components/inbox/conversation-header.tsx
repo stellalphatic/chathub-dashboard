@@ -114,6 +114,7 @@ export function ConversationHeader({
         <div className="min-w-0">
         <div className="flex items-center gap-2">
           {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- external WhatsApp/Meta URLs; avoid remotePatterns churn
             <img
               src={avatarUrl}
               alt={displayName ? `${displayName} profile` : "Customer profile"}

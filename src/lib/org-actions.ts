@@ -41,12 +41,6 @@ import {
 } from "@/lib/queue";
 import { queueOutboundMessage } from "@/lib/services/outbound";
 
-async function requireAccess(orgSlug: string) {
-  const access = await getOrgAccess(orgSlug);
-  if (!access) throw new Error("unauthorized");
-  return access;
-}
-
 async function requireOrgPermissionGate(
   orgSlug: string,
   section: OrgSection,

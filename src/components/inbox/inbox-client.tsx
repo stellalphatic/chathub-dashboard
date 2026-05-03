@@ -261,6 +261,7 @@ export function InboxSidebar({
                 >
                   <div className="flex items-start gap-2.5">
                     {cv.avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- external avatar URLs
                       <img
                         src={cv.avatarUrl}
                         alt={

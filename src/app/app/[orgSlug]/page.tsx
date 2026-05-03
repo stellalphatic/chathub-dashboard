@@ -1,8 +1,7 @@
 import { and, count, eq, gte, lt } from "drizzle-orm";
-import { notFound } from "next/navigation";
 import { DashboardAnalytics } from "@/components/dashboard/dashboard-analytics";
 import { db } from "@/db";
-import { customer, message, organization } from "@/db/schema";
+import { customer, message } from "@/db/schema";
 import { assertOrgPage } from "@/lib/org-access";
 import {
   bucketMessageDates,

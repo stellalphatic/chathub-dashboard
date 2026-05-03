@@ -19,8 +19,8 @@ export function TemplateRowActions({
   status: string;
   readOnly?: boolean;
 }) {
-  if (readOnly) return null;
   const [pending, start] = useTransition();
+  if (readOnly) return null;
   const act = (next: Status) => {
     start(async () => {
       const res = await setTemplateStatusAction({ orgSlug, id, status: next });
