@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { CheckCircle2, Plug } from "lucide-react";
 import { db } from "@/db";
 import { channelConnection } from "@/db/schema";
-import { assertOrgAdmin } from "@/lib/org-access";
+import { assertOrgPage } from "@/lib/org-access";
 import {
   Card,
   CardContent,
@@ -21,7 +21,9 @@ export default async function ChannelsPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const { org } = await assertOrgAdmin(orgSlug);
+  const access = await assertOrgPage(orgSlug, "channels", "view");
+  const { org } = access;
+  const readOnly = !access.permissions.channels.edit;
 
   const rows = await db
     .select()
@@ -41,6 +43,12 @@ export default async function ChannelsPage({
           full step-by-step setup guide and the exact webhook URL to paste in the provider.
           Everything is encrypted at rest with AES-256-GCM.
         </p>
+        {readOnly ? (
+          <p className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+            View-only: you can review connections and copy webhook URLs, but your role can&apos;t
+            add or remove channels.
+          </p>
+        ) : null}
       </div>
 
       {/* Connected channels quick summary */}
@@ -103,6 +111,7 @@ export default async function ChannelsPage({
                       orgSlug={orgSlug}
                       id={r.id}
                       label={r.label ?? `${r.provider} · ${r.channel}`}
+                      readOnly={readOnly}
                     />
                   </div>
                 </li>
@@ -116,6 +125,7 @@ export default async function ChannelsPage({
       <IntegrationsList
         orgSlug={orgSlug}
         appOrigin={appOrigin}
+        readOnly={readOnly}
         connected={rows.map((r) => ({
           id: r.id,
           provider: r.provider,

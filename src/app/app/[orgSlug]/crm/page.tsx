@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { CrmListClient } from "@/components/crm/crm-list-client";
-import { assertOrgMember } from "@/lib/org-access";
+import { assertOrgPage } from "@/lib/org-access";
 import { db } from "@/db";
 import { customer, message } from "@/db/schema";
 
@@ -15,7 +15,7 @@ export default async function CrmListPage({
 }) {
   const { orgSlug } = await params;
   const { q } = await searchParams;
-  const { org } = await assertOrgMember(orgSlug);
+  const { org } = await assertOrgPage(orgSlug, "crm", "view");
 
   const term = q?.trim() ?? "";
   const searchPattern = term ? `%${term}%` : null;

@@ -41,6 +41,7 @@ export function IntegrationsList({
   connected,
   metaVerifyToken,
   metaAppSecretSet,
+  readOnly = false,
 }: {
   orgSlug: string;
   appOrigin: string;
@@ -51,6 +52,8 @@ export function IntegrationsList({
   /** Whether META_APP_SECRET is set on the platform (we don't expose the
    *  value, just status). Drives the "set this in Amplify" callout. */
   metaAppSecretSet?: boolean;
+  /** When true, hide connect forms (view webhook URLs / docs only). */
+  readOnly?: boolean;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -102,6 +105,7 @@ export function IntegrationsList({
                   metaVerifyToken={metaVerifyToken}
                   metaAppSecretSet={metaAppSecretSet}
                   existingConnection={findConnection(it)}
+                  readOnly={readOnly}
                 />
               ))}
             </div>
@@ -122,6 +126,7 @@ function IntegrationCard({
   metaVerifyToken,
   metaAppSecretSet,
   existingConnection,
+  readOnly = false,
 }: {
   integration: Integration;
   orgSlug: string;
@@ -132,6 +137,7 @@ function IntegrationCard({
   metaVerifyToken?: string | null;
   metaAppSecretSet?: boolean;
   existingConnection?: ConnectedSummary;
+  readOnly?: boolean;
 }) {
   const webhookUrl = appOrigin
     ? `${appOrigin}${it.webhookPath}`
@@ -220,6 +226,7 @@ function IntegrationCard({
               metaAppSecretSet={metaAppSecretSet}
               existingConnection={existingConnection}
               appOrigin={appOrigin}
+              readOnly={readOnly}
             />
           </motion.div>
         ) : null}
@@ -236,6 +243,7 @@ function IntegrationBody({
   metaAppSecretSet,
   existingConnection,
   appOrigin,
+  readOnly = false,
 }: {
   it: Integration;
   orgSlug: string;
@@ -244,6 +252,7 @@ function IntegrationBody({
   metaAppSecretSet?: boolean;
   existingConnection?: ConnectedSummary;
   appOrigin: string;
+  readOnly?: boolean;
 }) {
   const [tab, setTab] = useState<"setup" | "credentials">("setup");
   return (
@@ -363,7 +372,7 @@ function IntegrationBody({
       </div>
 
       <div className={tab === "credentials" ? "" : "hidden"}>
-        <CredentialsForm it={it} orgSlug={orgSlug} />
+        <CredentialsForm it={it} orgSlug={orgSlug} readOnly={readOnly} />
       </div>
     </div>
   );
@@ -566,9 +575,11 @@ function TabButton({
 function CredentialsForm({
   it,
   orgSlug,
+  readOnly = false,
 }: {
   it: Integration;
   orgSlug: string;
+  readOnly?: boolean;
 }) {
   const [label, setLabel] = useState("");
   const [externalId, setExternalId] = useState("");
@@ -598,6 +609,10 @@ function CredentialsForm({
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
+        if (readOnly) {
+          toast.error("View-only: you can't connect channels with this role.");
+          return;
+        }
         const missing = findMissingField();
         if (missing) {
           toast.error(`${missing} is required.`);
@@ -768,7 +783,7 @@ function CredentialsForm({
       <Button
         type="submit"
         variant="gradient"
-        disabled={pending}
+        disabled={pending || readOnly}
         className="w-full sm:w-auto"
       >
         {pending ? "Connecting…" : "Save & connect"}

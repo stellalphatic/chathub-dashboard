@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { Megaphone } from "lucide-react";
 import { db } from "@/db";
 import { broadcast, template } from "@/db/schema";
-import { assertOrgAdmin } from "@/lib/org-access";
+import { assertOrgPage } from "@/lib/org-access";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -29,7 +29,9 @@ export default async function BroadcastsPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const { org } = await assertOrgAdmin(orgSlug);
+  const access = await assertOrgPage(orgSlug, "broadcasts", "view");
+  const { org } = access;
+  const readOnly = !access.permissions.broadcasts.edit;
 
   const templates = await db
     .select({
@@ -60,6 +62,12 @@ export default async function BroadcastsPage({
           Send an approved WhatsApp template to a list of contacts. Each send respects the
           24-hour customer-service window and is rate-limited at the provider level.
         </p>
+        {readOnly ? (
+          <p className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+            View-only: you can inspect past broadcasts; creating new ones requires editor access or
+            higher.
+          </p>
+        ) : null}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -94,7 +102,9 @@ export default async function BroadcastsPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {approved.length === 0 ? (
+          {readOnly ? (
+            <p className="text-sm text-[rgb(var(--fg-muted))]">New broadcasts are disabled for your role.</p>
+          ) : approved.length === 0 ? (
             <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
               No approved templates yet. Create one on the{" "}
               <a

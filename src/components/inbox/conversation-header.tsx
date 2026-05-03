@@ -46,6 +46,7 @@ export function ConversationHeader({
   phoneE164,
   avatarUrl,
   businessChannelLabel,
+  canEditInbox = true,
 }: {
   orgSlug: string;
   conversationId: string;
@@ -59,6 +60,8 @@ export function ConversationHeader({
   avatarUrl?: string | null;
   /** Our connected WhatsApp / Instagram / Messenger identity for this thread. */
   businessChannelLabel?: string | null;
+  /** When false, hide AI toggle and thread management actions (view-only inbox). */
+  canEditInbox?: boolean;
 }) {
   const [pending, start] = useTransition();
   const isBot = mode === "bot";
@@ -146,6 +149,8 @@ export function ConversationHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        {canEditInbox ? (
+          <>
         <button
           type="button"
           disabled={pending}
@@ -215,6 +220,12 @@ export function ConversationHeader({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+          </>
+        ) : (
+          <span className="rounded-full border border-[rgb(var(--border))] px-3 py-1 text-[11px] text-[rgb(var(--fg-muted))]">
+            Inbox (view only)
+          </span>
+        )}
       </div>
     </header>
   );

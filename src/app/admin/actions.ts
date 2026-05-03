@@ -9,6 +9,7 @@ import {
   organizationMember,
   user as userTable,
 } from "@/db/schema";
+import { ORG_MEMBER_ROLES, type OrgMemberRole } from "@/lib/org-permissions";
 import { getServerSession } from "@/lib/session";
 
 async function requirePlatformAdmin() {
@@ -79,12 +80,19 @@ export async function createOrganizationAction(input: {
 export async function addOrganizationMemberAction(input: {
   organizationId: string;
   email: string;
+  /** Defaults to `agent` when omitted. */
+  role?: string;
 }) {
   await requirePlatformAdmin();
   const email = input.email.trim().toLowerCase();
   if (!email.includes("@")) {
     return { error: "Invalid email" };
   }
+  const rawRole = (input.role ?? "agent").trim().toLowerCase();
+  if (!ORG_MEMBER_ROLES.includes(rawRole as OrgMemberRole)) {
+    return { error: "Invalid role." };
+  }
+  const role = rawRole as OrgMemberRole;
 
   const [org] = await db
     .select({ id: organization.id })
@@ -112,7 +120,7 @@ export async function addOrganizationMemberAction(input: {
       id: randomUUID(),
       organizationId: org.id,
       userId: u.id,
-      role: "member",
+      role,
       createdAt: new Date(),
     });
   } catch (e) {

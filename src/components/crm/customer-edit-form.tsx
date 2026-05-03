@@ -89,10 +89,12 @@ export function CustomerEditForm({
   orgSlug,
   initial,
   history,
+  readOnly = false,
 }: {
   orgSlug: string;
   initial: CustomerEditInitial;
   history: HistoryItem[];
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [displayName, setDisplayName] = useState(initial.displayName);
@@ -106,6 +108,7 @@ export function CustomerEditForm({
   const [pending, start] = useTransition();
 
   function save() {
+    if (readOnly) return;
     start(async () => {
       const res = await updateCustomerAction({
         orgSlug,
@@ -136,6 +139,7 @@ export function CustomerEditForm({
   }
 
   const addTag = () => {
+    if (readOnly) return;
     const v = tagDraft.trim();
     if (!v) return;
     if (tags.includes(v)) {
@@ -147,6 +151,7 @@ export function CustomerEditForm({
   };
 
   const changeStatus = (next: typeof STATUSES[number]["id"]) => {
+    if (readOnly) return;
     setStatus(next);
     start(async () => {
       const res = await setCustomerStatusAction({
@@ -182,7 +187,10 @@ export function CustomerEditForm({
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_1.5fr]">
       {/* LEFT — profile + actions */}
-      <div className="space-y-4">
+      <fieldset
+        disabled={readOnly}
+        className="min-w-0 space-y-4 border-0 p-0 m-0 disabled:opacity-[0.65]"
+      >
         <Card>
           <CardContent className="flex flex-col items-center gap-3 p-6 text-center">
             <span className="flex h-16 w-16 items-center justify-center rounded-full gradient-brand text-2xl font-semibold text-white shadow-lg">
@@ -362,7 +370,7 @@ export function CustomerEditForm({
           </CardContent>
         </Card>
 
-        <Button variant="gradient" onClick={save} disabled={pending} className="w-full">
+        <Button variant="gradient" onClick={save} disabled={pending || readOnly} className="w-full">
           {pending ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" /> Saving…
@@ -373,7 +381,7 @@ export function CustomerEditForm({
             </>
           )}
         </Button>
-      </div>
+      </fieldset>
 
       {/* RIGHT — tabs (activity / metadata / audit) */}
       <div>
@@ -501,6 +509,7 @@ export function CustomerEditForm({
                   onChange={(e) => setMetadataJson(e.target.value)}
                   rows={12}
                   spellCheck={false}
+                  readOnly={readOnly}
                   className="font-mono text-xs"
                 />
                 {initial.profileJson && initial.profileJson !== "{}" ? (

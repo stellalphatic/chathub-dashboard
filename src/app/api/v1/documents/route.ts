@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { document, organization } from "@/db/schema";
 import { isS3Configured, uploadToS3 } from "@/lib/media/s3";
-import { getOrgAccess } from "@/lib/org-access";
+import { canUseSection, getOrgAccess } from "@/lib/org-access";
 import { QUEUES, safeEnqueue, type EmbedDocumentJob } from "@/lib/queue";
 
 export const runtime = "nodejs";
@@ -52,6 +52,9 @@ export async function POST(request: Request) {
     const access = await getOrgAccess(orgSlug);
     if (!access) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!canUseSection(access.permissions, "knowledge", "edit")) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     let form: FormData;
@@ -173,6 +176,9 @@ export async function GET(request: Request) {
   const access = await getOrgAccess(orgSlug);
   if (!access) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!canUseSection(access.permissions, "knowledge", "view")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const rows = await db
     .select()

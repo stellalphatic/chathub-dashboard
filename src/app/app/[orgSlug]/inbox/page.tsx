@@ -17,7 +17,7 @@ import {
   template,
 } from "@/db/schema";
 import { formatBusinessChannelLabel } from "@/lib/channels/display-label";
-import { assertOrgMember } from "@/lib/org-access";
+import { assertOrgPage } from "@/lib/org-access";
 import { cn } from "@/lib/utils";
 
 export default async function InboxPage({
@@ -30,7 +30,9 @@ export default async function InboxPage({
   const { orgSlug } = await params;
   const { c } = await searchParams;
 
-  const { org } = await assertOrgMember(orgSlug);
+  const access = await assertOrgPage(orgSlug, "inbox", "view");
+  const { org } = access;
+  const canEditInbox = access.permissions.inbox.edit;
 
   const channelRows = await db
     .select()
@@ -188,6 +190,7 @@ export default async function InboxPage({
                 businessChannelLabel={businessLabelFor(
                   active.channelConnectionId ?? null,
                 )}
+                canEditInbox={canEditInbox}
               />
               <ThreadMessages
                 threadKey={selectedId ?? "none"}
@@ -199,6 +202,7 @@ export default async function InboxPage({
                 conversationId={active.id}
                 channel={active.channel}
                 lastInboundAt={active.lastInboundAt}
+                canSend={canEditInbox}
                 templates={approvedTemplates.map((t) => ({
                   id: t.id,
                   name: t.name,

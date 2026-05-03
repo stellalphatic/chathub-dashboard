@@ -1,8 +1,10 @@
 import { eq } from "drizzle-orm";
 import { Mail, User as UserIcon } from "lucide-react";
+import { OrgTeamPanel } from "@/components/app/org-team-panel";
 import { db } from "@/db";
 import { organizationMember, user } from "@/db/schema";
-import { assertOrgMember } from "@/lib/org-access";
+import { assertOrgPage } from "@/lib/org-access";
+import { ORG_MEMBER_ROLES, type OrgMemberRole } from "@/lib/org-permissions";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -12,17 +14,26 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+const ROLE_HELP: Record<OrgMemberRole, string> = {
+  owner: "Full configuration + manage who is on the team.",
+  admin: "Same as owner — use when you trust someone to add/remove members.",
+  editor: "Bot, knowledge, channels, templates, broadcasts — not team admin.",
+  viewer: "Read-only everywhere (good for demos and stakeholders).",
+  agent: "Inbox + customers + overview — no access to bot or channel settings.",
+};
+
 export default async function TeamPage({
   params,
 }: {
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const { org } = await assertOrgMember(orgSlug);
+  const access = await assertOrgPage(orgSlug, "team", "view");
+  const { org } = access;
 
   const members = await db
     .select({
-      id: user.id,
+      userId: user.id,
       name: user.name,
       email: user.email,
       role: organizationMember.role,
@@ -39,18 +50,52 @@ export default async function TeamPage({
           Team
         </h2>
         <p className="mt-1 text-sm text-[rgb(var(--fg-muted))]">
-          Everyone who can open this business dashboard. New members are provisioned by a
-          ChatHub admin — ask them to invite by email.
+          Roles control what each person can see and edit in this business. Platform staff can
+          always adjust access from the staff console.
         </p>
       </div>
+
+      {access.canManageOrgMembers ? (
+        <OrgTeamPanel
+          orgSlug={orgSlug}
+          canManage
+          members={members.map((m) => ({
+            userId: m.userId,
+            name: m.name,
+            email: m.email,
+            role: m.role,
+          }))}
+        />
+      ) : null}
 
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Members ({members.length})</CardTitle>
           <CardDescription>
-            Roles: <Badge variant="outline" className="text-[10px]">member</Badge> — full
-            access to this business.
+            Roles:{" "}
+            {ORG_MEMBER_ROLES.map((r) => (
+              <span key={r} className="mr-1 inline-block">
+                <Badge variant="outline" className="text-[10px]">
+                  {r}
+                </Badge>
+              </span>
+            ))}
           </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-xs text-[rgb(var(--fg-muted))]">
+          <ul className="space-y-1">
+            {ORG_MEMBER_ROLES.map((r) => (
+              <li key={r}>
+                <strong className="text-[rgb(var(--fg))]">{r}:</strong> {ROLE_HELP[r]}
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Directory</CardTitle>
         </CardHeader>
         <CardContent>
           {members.length === 0 ? (
@@ -61,7 +106,7 @@ export default async function TeamPage({
             <ul className="divide-y divide-[rgb(var(--border))] rounded-xl border border-[rgb(var(--border))]">
               {members.map((m) => (
                 <li
-                  key={m.id}
+                  key={m.userId}
                   className="flex flex-col gap-2 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="flex min-w-0 items-center gap-3">
@@ -102,8 +147,9 @@ export default async function TeamPage({
           <div className="text-sm">
             <p className="font-medium">Need to add someone?</p>
             <p className="mt-0.5 text-xs text-[rgb(var(--fg-muted))]">
-              Your ChatHub administrator can invite more members from the staff console in
-              under a minute. They&apos;ll get a one-time sign-in code by email.
+              A ChatHub platform admin can invite them from the staff console and pick a role
+              (viewer, agent, editor, …). Owners and admins in your business can change roles
+              here anytime.
             </p>
           </div>
         </CardContent>

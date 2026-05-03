@@ -129,9 +129,11 @@ function ChipList({
 export function BotConfigForm({
   orgSlug,
   initial,
+  readOnly = false,
 }: {
   orgSlug: string;
   initial: BotConfigInput;
+  readOnly?: boolean;
 }) {
   const [form, setForm] = useState({
     ...initial,
@@ -175,6 +177,7 @@ export function BotConfigForm({
       className="space-y-6"
       onSubmit={(e) => {
         e.preventDefault();
+        if (readOnly) return;
         setError(null);
         setOk(false);
         start(async () => {
@@ -197,6 +200,10 @@ export function BotConfigForm({
         });
       }}
     >
+      <fieldset
+        disabled={readOnly}
+        className="min-w-0 space-y-6 border-0 p-0 m-0 disabled:opacity-[0.65]"
+      >
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <Switch
           id="bot-enabled"
@@ -466,7 +473,7 @@ export function BotConfigForm({
 
         {/* Voice / TTS / Transcription */}
         <TabsContent value="voice" className="space-y-6">
-          <VoiceTab orgSlug={orgSlug} initial={initial} />
+          <VoiceTab orgSlug={orgSlug} initial={initial} readOnly={readOnly} />
         </TabsContent>
       </Tabs>
 
@@ -482,10 +489,11 @@ export function BotConfigForm({
       )}
 
       <div className="flex items-center justify-end gap-2">
-        <Button type="submit" variant="gradient" disabled={pending}>
+        <Button type="submit" variant="gradient" disabled={pending || readOnly}>
           {pending ? "Saving…" : "Save bot config"}
         </Button>
       </div>
+      </fieldset>
     </form>
   );
 }
@@ -503,9 +511,11 @@ export function BotConfigForm({
 function VoiceTab({
   orgSlug,
   initial,
+  readOnly = false,
 }: {
   orgSlug: string;
   initial: BotConfigInput;
+  readOnly?: boolean;
 }) {
   const [enabled, setEnabled] = useState<boolean>(
     Boolean(initial.voiceReplyEnabled),
@@ -528,6 +538,7 @@ function VoiceTab({
   const [pending, start] = useTransition();
 
   const submit = () => {
+    if (readOnly) return;
     setMsg(null);
     start(async () => {
       const res = await upsertBotVoiceAction({
@@ -701,7 +712,7 @@ function VoiceTab({
         <Button
           type="button"
           variant="gradient"
-          disabled={pending}
+          disabled={pending || readOnly}
           onClick={submit}
         >
           {pending ? "Saving…" : "Save voice settings"}

@@ -8,11 +8,14 @@ export function DocumentActions({
   orgSlug,
   id,
   title,
+  readOnly = false,
 }: {
   orgSlug: string;
   id: string;
   title?: string;
+  readOnly?: boolean;
 }) {
+  if (readOnly) return null;
   return (
     <ConfirmButton
       title="Delete this document?"

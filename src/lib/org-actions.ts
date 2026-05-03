@@ -20,7 +20,7 @@ import {
 } from "@/db/schema";
 import { invalidateBotConfigCache } from "@/lib/cache/bot-config";
 import { encryptJSON } from "@/lib/encryption";
-import { getOrgAccess } from "@/lib/org-access";
+import { canUseSection, getOrgAccess, type OrgSection } from "@/lib/org-access";
 import { formatBusinessChannelLabel } from "@/lib/channels/display-label";
 import {
   fetchInstagramBusinessAccountProfile,
@@ -45,6 +45,19 @@ async function requireAccess(orgSlug: string) {
   const access = await getOrgAccess(orgSlug);
   if (!access) throw new Error("unauthorized");
   return access;
+}
+
+async function requireOrgPermissionGate(
+  orgSlug: string,
+  section: OrgSection,
+  mode: "view" | "edit",
+): Promise<{ ok: true; access: NonNullable<Awaited<ReturnType<typeof getOrgAccess>>> } | { ok: false; error: string }> {
+  const access = await getOrgAccess(orgSlug);
+  if (!access) return { ok: false, error: "Unauthorized" };
+  if (!canUseSection(access.permissions, section, mode)) {
+    return { ok: false, error: "You don't have permission to do that." };
+  }
+  return { ok: true, access };
 }
 
 async function isUserPlatformStaff(userId: string): Promise<boolean> {
@@ -76,11 +89,17 @@ type OrgIntegrationGate = { ok: true; org: OrgRow; userId: string } | { ok: fals
  * configuration flow through platform admins. The per-org `clientConfigReadOnly`
  * setting is kept for backwards-compat but the lock is now the default.
  */
-async function requireOrgIntegrationWrite(orgSlug: string): Promise<OrgIntegrationGate> {
+async function requireOrgIntegrationWrite(
+  orgSlug: string,
+  section: OrgSection,
+): Promise<OrgIntegrationGate> {
   const access = await getOrgAccess(orgSlug);
   if (!access) return { ok: false, error: "Unauthorized" };
   const { org, userId } = access;
   if (await isUserPlatformStaff(userId)) return { ok: true, org, userId };
+  if (!canUseSection(access.permissions, section, "edit")) {
+    return { ok: false, error: "You don't have permission to change this." };
+  }
   // Soft escape hatch: leave CHATHUB_FORCE_CLIENT_CONFIG_READ_ONLY unset AND
   // the org setting `clientConfigReadOnly` explicitly false to let members edit.
   if (isOrgClientConfigReadOnlyLocked(org) || isOrgClientConfigDefaultLocked(org)) {
@@ -128,7 +147,9 @@ export async function sendMessageAction(
       .join("; ");
     return { error: issues || "Invalid input" };
   }
-  const { org, userId } = await requireAccess(p.data.orgSlug);
+  const gate = await requireOrgPermissionGate(p.data.orgSlug, "inbox", "edit");
+  if (!gate.ok) return { error: gate.error };
+  const { org, userId } = gate.access;
 
   const [conv] = await db
     .select({ id: conversation.id, organizationId: conversation.organizationId })
@@ -182,7 +203,9 @@ export async function setConversationModeAction(input: {
   conversationId: string;
   mode: "bot" | "human";
 }): Promise<{ ok: true } | { error: string }> {
-  const { org, userId } = await requireAccess(input.orgSlug);
+  const gate = await requireOrgPermissionGate(input.orgSlug, "inbox", "edit");
+  if (!gate.ok) return { error: gate.error };
+  const { org, userId } = gate.access;
   await db
     .update(conversation)
     .set({
@@ -205,7 +228,9 @@ export async function markConversationReadAction(input: {
   orgSlug: string;
   conversationId: string;
 }): Promise<{ ok: true } | { error: string }> {
-  const { org } = await requireAccess(input.orgSlug);
+  const gate = await requireOrgPermissionGate(input.orgSlug, "inbox", "view");
+  if (!gate.ok) return { error: gate.error };
+  const { org } = gate.access;
   await db
     .update(conversation)
     .set({ unreadCount: 0, updatedAt: new Date() })
@@ -224,7 +249,9 @@ export async function setConversationStatusAction(input: {
   conversationId: string;
   status: "open" | "snoozed" | "closed";
 }): Promise<{ ok: true } | { error: string }> {
-  const { org } = await requireAccess(input.orgSlug);
+  const gate = await requireOrgPermissionGate(input.orgSlug, "inbox", "edit");
+  if (!gate.ok) return { error: gate.error };
+  const { org } = gate.access;
   await db
     .update(conversation)
     .set({ status: input.status, updatedAt: new Date() })
@@ -247,7 +274,9 @@ export async function clearConversationHistoryAction(input: {
   orgSlug: string;
   conversationId: string;
 }): Promise<{ ok: true } | { error: string }> {
-  const { org } = await requireAccess(input.orgSlug);
+  const gate = await requireOrgPermissionGate(input.orgSlug, "inbox", "edit");
+  if (!gate.ok) return { error: gate.error };
+  const { org } = gate.access;
   const [conv] = await db
     .select({ id: conversation.id })
     .from(conversation)
@@ -279,7 +308,9 @@ export async function deleteConversationAction(input: {
   orgSlug: string;
   conversationId: string;
 }): Promise<{ ok: true } | { error: string }> {
-  const { org } = await requireAccess(input.orgSlug);
+  const gate = await requireOrgPermissionGate(input.orgSlug, "inbox", "edit");
+  if (!gate.ok) return { error: gate.error };
+  const { org } = gate.access;
   await db
     .delete(conversation)
     .where(
@@ -314,7 +345,7 @@ export async function connectChannelAction(
     if (!p.success) {
       return { error: p.error.issues.map((i) => i.message).join(", ") };
     }
-    const gate = await requireOrgIntegrationWrite(p.data.orgSlug);
+    const gate = await requireOrgIntegrationWrite(p.data.orgSlug, "channels");
     if (!gate.ok) return { error: gate.error };
     const { org } = gate;
 
@@ -482,7 +513,7 @@ export async function deleteChannelAction(input: {
   orgSlug: string;
   id: string;
 }): Promise<{ ok: true } | { error: string }> {
-  const gate = await requireOrgIntegrationWrite(input.orgSlug);
+  const gate = await requireOrgIntegrationWrite(input.orgSlug, "channels");
   if (!gate.ok) return { error: gate.error };
   const { org } = gate;
   await db
@@ -533,7 +564,7 @@ export async function upsertBotConfigAction(
       .join("; ");
     return { error: issues || "Invalid input" };
   }
-  const gate = await requireOrgIntegrationWrite(p.data.orgSlug);
+  const gate = await requireOrgIntegrationWrite(p.data.orgSlug, "bot");
   if (!gate.ok) return { error: gate.error };
   const { org } = gate;
 
@@ -612,7 +643,7 @@ export async function upsertBotVoiceAction(
         .join("; ");
       return { error: issues || "Invalid input" };
     }
-    const gate = await requireOrgIntegrationWrite(p.data.orgSlug);
+    const gate = await requireOrgIntegrationWrite(p.data.orgSlug, "bot");
     if (!gate.ok) return { error: gate.error };
     const { org } = gate;
 
@@ -684,7 +715,7 @@ export async function addFaqAction(input: {
   question: string;
   answer: string;
 }): Promise<{ ok: true } | { error: string }> {
-  const gate = await requireOrgIntegrationWrite(input.orgSlug);
+  const gate = await requireOrgIntegrationWrite(input.orgSlug, "bot");
   if (!gate.ok) return { error: gate.error };
   const { org } = gate;
   if (!input.question.trim() || !input.answer.trim()) {
@@ -706,7 +737,7 @@ export async function deleteFaqAction(input: {
   orgSlug: string;
   id: string;
 }): Promise<{ ok: true } | { error: string }> {
-  const gate = await requireOrgIntegrationWrite(input.orgSlug);
+  const gate = await requireOrgIntegrationWrite(input.orgSlug, "bot");
   if (!gate.ok) return { error: gate.error };
   const { org } = gate;
   await db
@@ -726,7 +757,9 @@ export async function createDocumentFromTextAction(input: {
   title: string;
   text: string;
 }): Promise<{ ok: true; id: string } | { error: string }> {
-  const { org, userId } = await requireAccess(input.orgSlug);
+  const gate = await requireOrgIntegrationWrite(input.orgSlug, "knowledge");
+  if (!gate.ok) return { error: gate.error };
+  const { org, userId } = gate;
   if (!input.title.trim() || !input.text.trim()) {
     return { error: "title and text required" };
   }
@@ -761,7 +794,9 @@ export async function deleteDocumentAction(input: {
   orgSlug: string;
   id: string;
 }): Promise<{ ok: true } | { error: string }> {
-  const { org } = await requireAccess(input.orgSlug);
+  const gate = await requireOrgIntegrationWrite(input.orgSlug, "knowledge");
+  if (!gate.ok) return { error: gate.error };
+  const { org } = gate;
   // Actual vector cleanup happens in the service; we fire-and-forget via a
   // lightweight import to avoid queue overhead for a single-doc delete.
   const { purgeDocument } = await import("@/lib/services/rag-ingest");
@@ -796,7 +831,9 @@ export async function upsertTemplateAction(
 ): Promise<{ ok: true; id: string } | { error: string }> {
   const p = createTemplateSchema.safeParse(raw);
   if (!p.success) return { error: p.error.issues.map((i) => i.message).join(", ") };
-  const { org } = await requireAccess(p.data.orgSlug);
+  const gate = await requireOrgIntegrationWrite(p.data.orgSlug, "templates");
+  if (!gate.ok) return { error: gate.error };
+  const { org } = gate;
 
   const [existing] = await db
     .select({ id: template.id })
@@ -847,7 +884,9 @@ export async function setTemplateStatusAction(input: {
   id: string;
   status: "draft" | "pending" | "approved" | "rejected";
 }): Promise<{ ok: true } | { error: string }> {
-  const { org } = await requireAccess(input.orgSlug);
+  const gate = await requireOrgIntegrationWrite(input.orgSlug, "templates");
+  if (!gate.ok) return { error: gate.error };
+  const { org } = gate;
   await db
     .update(template)
     .set({ status: input.status, updatedAt: new Date() })
@@ -880,7 +919,9 @@ export async function scheduleTemplateAction(
       .join("; ");
     return { error: issues || "Invalid input" };
   }
-  const { org, userId } = await requireAccess(p.data.orgSlug);
+  const gate = await requireOrgPermissionGate(p.data.orgSlug, "inbox", "edit");
+  if (!gate.ok) return { error: gate.error };
+  const { org, userId } = gate.access;
 
   const runAt = new Date(p.data.runAt);
   if (Number.isNaN(runAt.getTime())) return { error: "invalid runAt" };
@@ -952,7 +993,9 @@ export async function createBroadcastAction(
           .join("; "),
       };
     }
-    const { org, userId } = await requireAccess(p.data.orgSlug);
+    const gate = await requireOrgIntegrationWrite(p.data.orgSlug, "broadcasts");
+    if (!gate.ok) return { error: gate.error };
+    const { org, userId } = gate;
 
     const [tpl] = await db
       .select({ id: template.id, status: template.status })
@@ -1027,7 +1070,9 @@ export async function fetchConversationMessages(input: {
   conversationId: string;
   limit?: number;
 }) {
-  const { org } = await requireAccess(input.orgSlug);
+  const gate = await requireOrgPermissionGate(input.orgSlug, "inbox", "view");
+  if (!gate.ok) throw new Error(gate.error);
+  const { org } = gate.access;
   const limit = Math.min(input.limit ?? 100, 500);
   return db
     .select()

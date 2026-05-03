@@ -4,7 +4,6 @@ import { eq } from "drizzle-orm";
 import {
   ArrowLeft,
   ExternalLink,
-  IdCard,
   Lock,
   ShieldCheck,
   UserPlus,
@@ -28,6 +27,7 @@ import {
 import { CopyButton } from "@/components/ui/copy-button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IntegrationsList } from "@/components/channels/integrations-list";
+import { OrgTeamPanel } from "@/components/app/org-team-panel";
 
 export default async function OrganizationAdminPage({
   params,
@@ -46,6 +46,7 @@ export default async function OrganizationAdminPage({
 
   const members = await db
     .select({
+      userId: userTable.id,
       email: userTable.email,
       name: userTable.name,
       role: organizationMember.role,
@@ -154,9 +155,9 @@ export default async function OrganizationAdminPage({
                 <div>
                   <p className="font-medium">Multiple users per business</p>
                   <p className="mt-0.5 text-xs text-[rgb(var(--fg-muted))]">
-                    You can add as many people as you want — partners, employees, agents — each
-                    with their own email. Each login gets full CRM + Inbox access to{" "}
-                    <strong>{org.name}</strong>. Invite once below; repeat for every address.
+                    Add partners, agents, or read-only viewers — each with their own email and an
+                    access role (viewer for demos, agent for inbox-only, editor for configuration,
+                    etc.). Invite or link below for each address.
                   </p>
                 </div>
               </CardContent>
@@ -196,43 +197,30 @@ export default async function OrganizationAdminPage({
           </div>
         </TabsContent>
 
-        {/* MEMBERS list */}
+        {/* MEMBERS — roles managed here (same server actions as in-app team page). */}
         <TabsContent value="members">
-          <Card>
-            <CardHeader>
-              <CardTitle>Members ({members.length})</CardTitle>
-              <CardDescription>Everyone with access to this business.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {members.length === 0 ? (
-                <p className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-4 text-sm text-[rgb(var(--fg-muted))]">
-                  No members yet — invite someone from the Access tab.
-                </p>
-              ) : (
-                <ul className="divide-y divide-[rgb(var(--border))] rounded-xl border border-[rgb(var(--border))]">
-                  {members.map((m) => (
-                    <li
-                      key={m.email}
-                      className="flex flex-col gap-2 p-4 text-sm sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0 flex items-center gap-3">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[rgb(var(--surface-2))] text-[rgb(var(--fg-muted))]">
-                          <IdCard className="h-4 w-4" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="font-medium text-[rgb(var(--fg))]">{m.name}</p>
-                          <p className="truncate text-[rgb(var(--fg-muted))]">{m.email}</p>
-                        </div>
-                      </div>
-                      <Badge variant="outline" className="shrink-0 self-start sm:self-center">
-                        {m.role}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+          <div className="space-y-4">
+            {members.length === 0 ? (
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-[rgb(var(--fg-muted))]">
+                    No members yet — invite someone from the Access tab.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <OrgTeamPanel
+                orgSlug={org.slug}
+                canManage
+                members={members.map((m) => ({
+                  userId: m.userId,
+                  name: m.name,
+                  email: m.email,
+                  role: m.role ?? "agent",
+                }))}
+              />
+            )}
+          </div>
         </TabsContent>
 
         {/* CONFIG LOCK */}

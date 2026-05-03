@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { FileText } from "lucide-react";
 import { db } from "@/db";
 import { template } from "@/db/schema";
-import { assertOrgAdmin } from "@/lib/org-access";
+import { assertOrgPage } from "@/lib/org-access";
 import {
   Card,
   CardContent,
@@ -29,7 +29,9 @@ export default async function TemplatesPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const { org } = await assertOrgAdmin(orgSlug);
+  const access = await assertOrgPage(orgSlug, "templates", "view");
+  const { org } = access;
+  const readOnly = !access.permissions.templates.edit;
 
   const rows = await db
     .select()
@@ -48,6 +50,12 @@ export default async function TemplatesPage({
           window. Create here, submit to Meta/YCloud for approval, mark as approved when it
           clears.
         </p>
+        {readOnly ? (
+          <p className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+            View-only: you can read template definitions; status changes and creates require editor
+            access or higher.
+          </p>
+        ) : null}
       </div>
 
       <Card>
@@ -60,7 +68,11 @@ export default async function TemplatesPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <CreateTemplateForm orgSlug={orgSlug} />
+          {readOnly ? (
+            <p className="text-sm text-[rgb(var(--fg-muted))]">Creates and updates are disabled for your role.</p>
+          ) : (
+            <CreateTemplateForm orgSlug={orgSlug} />
+          )}
         </CardContent>
       </Card>
 
@@ -107,7 +119,12 @@ export default async function TemplatesPage({
                   <div className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-3 py-2 font-mono text-xs text-[rgb(var(--fg))]">
                     {t.bodyPreview}
                   </div>
-                  <TemplateRowActions orgSlug={orgSlug} id={t.id} status={t.status} />
+                  <TemplateRowActions
+                    orgSlug={orgSlug}
+                    id={t.id}
+                    status={t.status}
+                    readOnly={readOnly}
+                  />
                 </CardContent>
               </Card>
             ))}

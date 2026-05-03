@@ -8,9 +8,11 @@ import { Input } from "@/components/ui/input";
 export function FaqManager({
   orgSlug,
   faqs,
+  readOnly = false,
 }: {
   orgSlug: string;
   faqs: { id: string; question: string; answer: string; enabled: boolean }[];
+  readOnly?: boolean;
 }) {
   const [q, setQ] = useState("");
   const [a, setA] = useState("");
@@ -31,6 +33,7 @@ export function FaqManager({
                 </p>
                 <p className="truncate text-xs text-zinc-400">A: {f.answer}</p>
               </div>
+              {!readOnly ? (
               <button
                 type="button"
                 onClick={() => {
@@ -42,11 +45,13 @@ export function FaqManager({
               >
                 Remove
               </button>
+              ) : null}
             </li>
           ))
         )}
       </ul>
 
+      {!readOnly ? (
       <form
         className="space-y-2"
         onSubmit={(e) => {
@@ -87,6 +92,7 @@ export function FaqManager({
           {pending ? "…" : "Add FAQ"}
         </Button>
       </form>
+      ) : null}
     </div>
   );
 }

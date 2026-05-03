@@ -12,11 +12,14 @@ export function TemplateRowActions({
   orgSlug,
   id,
   status,
+  readOnly = false,
 }: {
   orgSlug: string;
   id: string;
   status: string;
+  readOnly?: boolean;
 }) {
+  if (readOnly) return null;
   const [pending, start] = useTransition();
   const act = (next: Status) => {
     start(async () => {

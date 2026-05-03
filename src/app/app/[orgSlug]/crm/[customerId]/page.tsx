@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { and, desc, eq } from "drizzle-orm";
 import { ArrowLeft } from "lucide-react";
 import { CustomerEditForm } from "@/components/crm/customer-edit-form";
-import { assertOrgMember } from "@/lib/org-access";
+import { assertOrgPage } from "@/lib/org-access";
 import { db } from "@/db";
 import { customer, message } from "@/db/schema";
 
@@ -13,7 +13,9 @@ export default async function CrmCustomerPage({
   params: Promise<{ orgSlug: string; customerId: string }>;
 }) {
   const { orgSlug, customerId } = await params;
-  const { org } = await assertOrgMember(orgSlug);
+  const access = await assertOrgPage(orgSlug, "crm", "view");
+  const { org } = access;
+  const readOnly = !access.permissions.crm.edit;
 
   const [row] = await db
     .select()
@@ -74,7 +76,12 @@ export default async function CrmCustomerPage({
       >
         <ArrowLeft className="h-3.5 w-3.5" /> Customers
       </Link>
-      <CustomerEditForm orgSlug={orgSlug} initial={initial} history={history} />
+      <CustomerEditForm
+        orgSlug={orgSlug}
+        initial={initial}
+        history={history}
+        readOnly={readOnly}
+      />
     </div>
   );
 }

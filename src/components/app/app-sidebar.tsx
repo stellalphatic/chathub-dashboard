@@ -21,6 +21,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BrandMark } from "@/components/brand/brand-logo";
 import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
+import {
+  buildPermissionMap,
+  type OrgPermissionMap,
+  type OrgSection,
+} from "@/lib/org-permissions";
 import { cn } from "@/lib/utils";
 
 type Org = { slug: string; name: string };
@@ -30,8 +35,8 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   match?: "exact";
-  /** Only platform admins see this item. */
-  adminOnly?: boolean;
+  /** When set, item is shown only if `permissions[section].view`. */
+  section?: OrgSection;
 };
 
 function buildSections(slug: string): { label: string; items: NavItem[] }[] {
@@ -39,34 +44,60 @@ function buildSections(slug: string): { label: string; items: NavItem[] }[] {
     {
       label: "Workspace",
       items: [
-        { href: `/app/${slug}`, icon: Home, label: "Overview", match: "exact" },
-        { href: `/app/${slug}/inbox`, icon: Inbox, label: "Inbox" },
-        { href: `/app/${slug}/crm`, icon: Users, label: "Customers" },
+        {
+          href: `/app/${slug}`,
+          icon: Home,
+          label: "Overview",
+          match: "exact",
+          section: "overview",
+        },
+        { href: `/app/${slug}/inbox`, icon: Inbox, label: "Inbox", section: "inbox" },
+        { href: `/app/${slug}/crm`, icon: Users, label: "Customers", section: "crm" },
       ],
     },
     {
       label: "Messaging",
       items: [
-        { href: `/app/${slug}/broadcasts`, icon: Megaphone, label: "Broadcasts", adminOnly: true },
-        { href: `/app/${slug}/templates`, icon: FileText, label: "Templates", adminOnly: true },
+        {
+          href: `/app/${slug}/broadcasts`,
+          icon: Megaphone,
+          label: "Broadcasts",
+          section: "broadcasts",
+        },
+        {
+          href: `/app/${slug}/templates`,
+          icon: FileText,
+          label: "Templates",
+          section: "templates",
+        },
       ],
     },
     {
       label: "Intelligence",
       items: [
-        { href: `/app/${slug}/bot`, icon: Bot, label: "Bot", adminOnly: true },
-        { href: `/app/${slug}/knowledge`, icon: Boxes, label: "Knowledge", adminOnly: true },
+        { href: `/app/${slug}/bot`, icon: Bot, label: "Bot", section: "bot" },
+        {
+          href: `/app/${slug}/knowledge`,
+          icon: Boxes,
+          label: "Knowledge",
+          section: "knowledge",
+        },
       ],
     },
     {
       label: "Integrations",
       items: [
-        { href: `/app/${slug}/channels`, icon: Plug, label: "Channels", adminOnly: true },
+        {
+          href: `/app/${slug}/channels`,
+          icon: Plug,
+          label: "Channels",
+          section: "channels",
+        },
       ],
     },
     {
       label: "Org",
-      items: [{ href: `/app/${slug}/team`, icon: UserCog, label: "Team" }],
+      items: [{ href: `/app/${slug}/team`, icon: UserCog, label: "Team", section: "team" }],
     },
   ];
 }
@@ -92,6 +123,13 @@ export function AppSidebar({
   const [pinned, setPinned] = useState<boolean>(false);
   const [hovered, setHovered] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [orgPermissions, setOrgPermissions] = useState<OrgPermissionMap | null>(null);
+
+  const agentNavFallback = useMemo(
+    () =>
+      buildPermissionMap("agent", { isPlatformAdmin: false, isOrgMember: true }).permissions,
+    [],
+  );
 
   useEffect(() => {
     try {
@@ -122,14 +160,39 @@ export function AppSidebar({
   const urlMatch = pathname?.match(/^\/app\/([^/]+)/);
   const activeSlug = urlMatch?.[1] ?? currentSlug;
 
-  const sections = useMemo(
-    () =>
-      buildSections(activeSlug).map((section) => ({
-        ...section,
-        items: section.items.filter((item) => !item.adminOnly || platformAdmin),
-      })),
-    [activeSlug, platformAdmin],
-  );
+  useEffect(() => {
+    const slug = activeSlug?.trim();
+    if (!slug || slug === "app") {
+      setOrgPermissions(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/app/org-permissions?slug=${encodeURIComponent(slug)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { permissions?: OrgPermissionMap } | null) => {
+        if (!cancelled && data?.permissions) setOrgPermissions(data.permissions);
+      })
+      .catch(() => {
+        if (!cancelled) setOrgPermissions(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSlug]);
+
+  const effectivePerms = platformAdmin
+    ? buildPermissionMap("owner", { isPlatformAdmin: true, isOrgMember: false }).permissions
+    : (orgPermissions ?? agentNavFallback);
+
+  const sections = useMemo(() => {
+    return buildSections(activeSlug).map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        if (!item.section) return true;
+        return effectivePerms[item.section]?.view;
+      }),
+    }));
+  }, [activeSlug, effectivePerms]);
 
   const orgOptions: SelectOption[] = orgs.map((o) => ({
     value: o.slug,
@@ -271,7 +334,8 @@ export function AppSidebar({
             <div className="flex items-start gap-2 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-2 text-[11px] text-[rgb(var(--fg-muted))]">
               <Lock className="mt-0.5 h-3 w-3 shrink-0 text-[rgb(var(--fg-subtle))]" />
               <span>
-                Bot, channels, knowledge and templates are managed by your ChatHub administrator.
+                Your role controls which pages you can edit. Ask an owner or admin if you need
+                broader access.
               </span>
             </div>
           </div>

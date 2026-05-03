@@ -3,6 +3,7 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { organization, organizationMember, user as userTable } from "@/db/schema";
+import { normalizeOrgMemberRole } from "@/lib/org-permissions";
 
 /** Comma-separated list (env) of emails to auto-promote to platform admin. */
 function adminEmailsFromEnv(): string[] {
@@ -54,8 +55,9 @@ type EnsureAppUserInput = {
  *   2. Clerk user has `publicMetadata.platformAdmin = true` or `privateMetadata.platformAdmin = true`.
  *   3. Clerk user has `publicMetadata.role = "admin" | "staff" | "platform_admin"`.
  *
- * If the invitation email carried `publicMetadata.pendingOrgId`, the user is added
- * to that organization as a member on first sign-in (metadata is cleared after).
+ * If the invitation email carried `publicMetadata.pendingOrgId` (and optional
+ * `pendingOrgRole`), the user is added to that organization on first sign-in
+ * (metadata is cleared after).
  */
 export async function ensureAppUser(input: EnsureAppUserInput): Promise<void> {
   const emailLower = (input.email ?? "").trim().toLowerCase();
@@ -134,12 +136,17 @@ export async function ensureAppUser(input: EnsureAppUserInput): Promise<void> {
         .where(eq(organization.id, orgId))
         .limit(1);
       if (!org) continue;
+      const rawPendingRole = (meta as Record<string, unknown>).pendingOrgRole;
+      const inviteRole =
+        typeof rawPendingRole === "string"
+          ? normalizeOrgMemberRole(rawPendingRole)
+          : "agent";
       try {
         await db.insert(organizationMember).values({
           id: randomUUID(),
           organizationId: org.id,
           userId: input.userId,
-          role: "member",
+          role: inviteRole,
           createdAt: new Date(),
         });
       } catch (e) {
@@ -153,6 +160,7 @@ export async function ensureAppUser(input: EnsureAppUserInput): Promise<void> {
       const client = await clerkClient();
       const next = { ...(meta as Record<string, unknown>) };
       delete next.pendingOrgId;
+      delete next.pendingOrgRole;
       await client.users.updateUserMetadata(input.userId, { publicMetadata: next });
     } catch (e) {
       console.warn("[ensureAppUser] failed to clear pendingOrgId metadata", e);

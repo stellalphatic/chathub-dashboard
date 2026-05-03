@@ -24,12 +24,15 @@ export function Composer({
   channel,
   lastInboundAt,
   templates,
+  canSend = true,
 }: {
   orgSlug: string;
   conversationId: string;
   channel: string;
   lastInboundAt: Date | null;
   templates: Template[];
+  /** When false (e.g. inbox view-only role), hide send UI. */
+  canSend?: boolean;
 }) {
   const [body, setBody] = useState("");
   const [mode, setMode] = useState<"freeform" | "template">("freeform");
@@ -83,6 +86,14 @@ export function Composer({
         setBody("");
       }
     });
+  }
+
+  if (canSend === false) {
+    return (
+      <div className="border-t border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-4 py-3 text-sm text-[rgb(var(--fg-muted))]">
+        View-only: your role can&apos;t send messages or templates in this inbox.
+      </div>
+    );
   }
 
   return (

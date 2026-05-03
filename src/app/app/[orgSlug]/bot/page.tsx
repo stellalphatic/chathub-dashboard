@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { botConfig, botFaq } from "@/db/schema";
-import { assertOrgAdmin } from "@/lib/org-access";
+import { assertOrgPage } from "@/lib/org-access";
 import {
   Card,
   CardContent,
@@ -18,7 +18,9 @@ export default async function BotPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const { org } = await assertOrgAdmin(orgSlug);
+  const access = await assertOrgPage(orgSlug, "bot", "view");
+  const { org } = access;
+  const readOnly = !access.permissions.bot.edit;
 
   const [cfg] = await db
     .select()
@@ -39,6 +41,12 @@ export default async function BotPage({
           Configure persona, escalation rules, and RAG. Groq → Gemini → OpenAI
           is the default fallback chain.
         </p>
+        {readOnly ? (
+          <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+            View-only: your role can&apos;t edit bot settings. Ask an owner or admin for editor
+            access.
+          </p>
+        ) : null}
       </div>
       <Card>
         <CardHeader>
@@ -51,6 +59,7 @@ export default async function BotPage({
         <CardContent>
           <BotConfigForm
             orgSlug={orgSlug}
+            readOnly={readOnly}
             initial={
               cfg
                 ? {
@@ -106,7 +115,7 @@ export default async function BotPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <FaqManager orgSlug={orgSlug} faqs={faqs} />
+          <FaqManager orgSlug={orgSlug} faqs={faqs} readOnly={readOnly} />
         </CardContent>
       </Card>
     </div>

@@ -11,7 +11,19 @@ import {
   user as userTable,
 } from "@/db/schema";
 import { getAppOrigin } from "@/lib/app-origin";
+import {
+  ORG_MEMBER_ROLES,
+  type OrgMemberRole,
+} from "@/lib/org-permissions";
 import { getServerSession } from "@/lib/session";
+
+function parseInviteRole(role: string | undefined): OrgMemberRole | { error: string } {
+  const raw = (role ?? "agent").trim().toLowerCase();
+  if (!ORG_MEMBER_ROLES.includes(raw as OrgMemberRole)) {
+    return { error: "Invalid role." };
+  }
+  return raw as OrgMemberRole;
+}
 
 async function requirePlatformAdmin() {
   const session = await getServerSession();
@@ -37,11 +49,19 @@ async function requirePlatformAdmin() {
 export async function inviteClientUserAction(input: {
   organizationId: string;
   email: string;
+  /** Defaults to `agent` when omitted. */
+  role?: string;
 }) {
   await requirePlatformAdmin();
 
   const email = input.email.trim().toLowerCase();
   if (!email.includes("@")) return { error: "Invalid email" };
+
+  const parsedRole = parseInviteRole(input.role);
+  if (typeof parsedRole === "object" && "error" in parsedRole) {
+    return parsedRole;
+  }
+  const memberRole = parsedRole;
 
   const [org] = await db
     .select({ id: organization.id, name: organization.name })
@@ -62,7 +82,7 @@ export async function inviteClientUserAction(input: {
         id: randomUUID(),
         organizationId: org.id,
         userId: localUser.id,
-        role: "member",
+        role: memberRole,
         createdAt: new Date(),
       });
     } catch (e) {
@@ -105,7 +125,7 @@ export async function inviteClientUserAction(input: {
         id: randomUUID(),
         organizationId: org.id,
         userId: clerkUser.id,
-        role: "member",
+        role: memberRole,
         createdAt: new Date(),
       });
     } catch (e) {
@@ -129,7 +149,7 @@ export async function inviteClientUserAction(input: {
     await client.invitations.createInvitation({
       emailAddress: email,
       redirectUrl: `${origin}/sign-up`,
-      publicMetadata: { pendingOrgId: org.id },
+      publicMetadata: { pendingOrgId: org.id, pendingOrgRole: memberRole },
       notify: true,
     });
   } catch (e) {

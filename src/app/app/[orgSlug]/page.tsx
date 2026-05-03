@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { DashboardAnalytics } from "@/components/dashboard/dashboard-analytics";
 import { db } from "@/db";
 import { customer, message, organization } from "@/db/schema";
+import { assertOrgPage } from "@/lib/org-access";
 import {
   bucketMessageDates,
   buildDashboardInsights,
@@ -21,12 +22,7 @@ export default async function OrgDashboardPage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const [org] = await db
-    .select()
-    .from(organization)
-    .where(eq(organization.slug, orgSlug))
-    .limit(1);
-  if (!org) notFound();
+  const { org } = await assertOrgPage(orgSlug, "overview", "view");
 
   const now = Date.now();
   const since24h = new Date(now - 24 * 60 * 60 * 1000);

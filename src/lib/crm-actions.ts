@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { customer } from "@/db/schema";
-import { getOrgAccess } from "@/lib/org-access";
+import { canUseSection, getOrgAccess } from "@/lib/org-access";
 
 /** Quick status-only update for kanban moves and list dropdowns. */
 export async function setCustomerStatusAction(input: {
@@ -15,6 +15,9 @@ export async function setCustomerStatusAction(input: {
 }): Promise<{ ok: true } | { error: string }> {
   const access = await getOrgAccess(input.orgSlug);
   if (!access) return { error: "Unauthorized." };
+  if (!canUseSection(access.permissions, "crm", "edit")) {
+    return { error: "You don't have permission to change customers." };
+  }
 
   const [row] = await db
     .select({ id: customer.id })
@@ -48,6 +51,9 @@ export async function setCustomerFlagsAction(input: {
 }): Promise<{ ok: true } | { error: string }> {
   const access = await getOrgAccess(input.orgSlug);
   if (!access) return { error: "Unauthorized." };
+  if (!canUseSection(access.permissions, "crm", "edit")) {
+    return { error: "You don't have permission to change customers." };
+  }
 
   const setObj: Record<string, unknown> = { updatedAt: new Date() };
   if (input.tags !== undefined) setObj.tags = input.tags;
@@ -120,6 +126,9 @@ export async function updateCustomerAction(
   const access = await getOrgAccess(input.orgSlug);
   if (!access) {
     return { error: "Unauthorized." };
+  }
+  if (!canUseSection(access.permissions, "crm", "edit")) {
+    return { error: "You don't have permission to change customers." };
   }
 
   const [row] = await db

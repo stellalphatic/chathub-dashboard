@@ -8,11 +8,14 @@ export function DeleteChannelButton({
   orgSlug,
   id,
   label,
+  readOnly = false,
 }: {
   orgSlug: string;
   id: string;
   label?: string;
+  readOnly?: boolean;
 }) {
+  if (readOnly) return null;
   return (
     <ConfirmButton
       title="Remove this channel connection?"

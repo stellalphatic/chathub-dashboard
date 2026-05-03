@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { CheckCircle2, Clock3, FileText, XCircle } from "lucide-react";
 import { db } from "@/db";
 import { document } from "@/db/schema";
-import { assertOrgAdmin } from "@/lib/org-access";
+import { assertOrgPage } from "@/lib/org-access";
 import {
   Card,
   CardContent,
@@ -41,7 +41,9 @@ export default async function KnowledgePage({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const { org } = await assertOrgAdmin(orgSlug);
+  const access = await assertOrgPage(orgSlug, "knowledge", "view");
+  const { org } = access;
+  const readOnly = !access.permissions.knowledge.edit;
 
   const docs = await db
     .select()
@@ -66,6 +68,12 @@ export default async function KnowledgePage({
           <code className="text-xs">OPENAI_API_KEY</code> there (Groq cannot embed). Scanned PDFs
           without a text layer cannot be indexed until you OCR or export text.
         </p>
+        {readOnly ? (
+          <p className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+            View-only: documents are listed for reference; upload and delete require editor access or
+            higher.
+          </p>
+        ) : null}
       </div>
 
       {/* Summary row */}
@@ -95,7 +103,13 @@ export default async function KnowledgePage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <AddDocumentForm orgSlug={orgSlug} />
+          {readOnly ? (
+            <p className="text-sm text-[rgb(var(--fg-muted))]">
+              Uploads are disabled for your role.
+            </p>
+          ) : (
+            <AddDocumentForm orgSlug={orgSlug} />
+          )}
         </CardContent>
       </Card>
 
@@ -146,7 +160,12 @@ export default async function KnowledgePage({
                       <StatusIcon status={d.status} />
                       {d.status}
                     </Badge>
-                    <DocumentActions orgSlug={orgSlug} id={d.id} title={d.title} />
+                    <DocumentActions
+                      orgSlug={orgSlug}
+                      id={d.id}
+                      title={d.title}
+                      readOnly={readOnly}
+                    />
                   </div>
                 </CardContent>
               </Card>
